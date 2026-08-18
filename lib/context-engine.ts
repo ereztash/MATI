@@ -9,11 +9,7 @@ export type SupportIntensity = 'light' | 'balanced' | 'deep';
 export type UsageContext = {
   sessionStartedAt: string;
   lastVisitAt?: string;
-  visitCount: number;
-  interactionCount: number;
   device: DeviceClass;
-  touch: boolean;
-  width?: number;
 };
 
 export type ContextSignal = {
