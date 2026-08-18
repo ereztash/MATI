@@ -32,7 +32,7 @@ export default function OrganizationalConsole() {
   const contributors = new Set(packs.map((p) => p.contributorId)).size;
   const contexts = new Set(packs.map((p) => p.contextId)).size;
   const periods = new Set(packs.map((p) => p.periodId)).size;
-  const surfaceable = summaries.filter((item) => item.classification.maySurfaceToOrganization);
+  const surfaceable = summaries.filter((item) => item.classification?.maySurfaceToOrganization);
   const belowFloor = contributors < MIN_AGGREGATE_COHORT;
 
   const importFiles = async (files: FileList | null) => {
@@ -74,7 +74,7 @@ export default function OrganizationalConsole() {
         periods: item.periods,
         concerns: item.concerns,
         neutral: item.neutral,
-        classification: item.classification.classification,
+        classification: item.classification?.classification ?? 'descriptive_only',
         mayAssertCausality: false,
       })),
     };
@@ -127,11 +127,11 @@ export default function OrganizationalConsole() {
               const classified = item.observations - item.neutral;
               const concernPct = classified > 0 ? Math.round((item.concerns / classified) * 100) : null;
               return (
-                <article key={item.key} className={`${styles.patternCard} ${d.maySurfaceToOrganization ? styles.surfaceable : ''}`}>
-                  <div className={styles.patternTop}><span>{labels[item.key]}</span><em>{classificationLabels[d.classification]}</em></div>
+                <article key={item.key} className={`${styles.patternCard} ${d?.maySurfaceToOrganization ? styles.surfaceable : ''}`}>
+                  <div className={styles.patternTop}><span>{labels[item.key]}</span><em>{d ? classificationLabels[d.classification] : 'מדד תיאורי בלבד'}</em></div>
                   <div className={styles.patternStats}><div><b>{item.contributors}</b><span>משתתפות</span></div><div><b>{item.contexts}</b><span>מסגרות</span></div><div><b>{item.periods}</b><span>תקופות</span></div></div>
-                  <p>{concernPct === null ? 'אין סף מקצועי מאושר שמאפשר לסווג את המדד הזה כבעיה; מוצג היקף בלבד.' : `${concernPct}% מהתצפיות המסווגות מצביעות על קושי.`}</p>
-                  {d.maySurfaceToOrganization && <strong>כדאי לבדוק מה משותף למצבים האלה לפני שמחליטים על התערבות.</strong>}
+                  <p>{concernPct === null ? 'אין סף מקצועי מאושר שמאפשר לסווג את המדד הזה כבעיה. הוא מוצג כתיאור היקף בלבד.' : `${concernPct}% מהתצפיות המסווגות מצביעות על קושי.`}</p>
+                  {d?.maySurfaceToOrganization && <strong>כדאי לבדוק מה משותף למצבים האלה לפני שמחליטים על התערבות.</strong>}
                 </article>
               );
             })}
