@@ -3,6 +3,7 @@ import { Heebo } from 'next/font/google';
 import './globals.css';
 import './context.css';
 import ContextLayer from './context-layer';
+import SessionStageReset from './session-stage-reset';
 
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="he" dir="rtl" className={heebo.variable}>
       <body>
+        <SessionStageReset />
         <ContextLayer />
         {children}
       </body>
