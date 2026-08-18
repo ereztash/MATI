@@ -40,9 +40,21 @@ const packLeaks = forbiddenPackFields.filter((field) => pack.includes(field));
 if (packLeaks.length) throw new Error(`Private fields entered organizational pack module: ${packLeaks.join(', ')}`);
 
 const consoleSource = stripComments(read('app', 'org', 'organizational-console.tsx'));
-for (const forbiddenImport of ['MatiState', "mati-v2", 'localStorage']) {
+for (const forbiddenImport of ['MatiState', 'mati-v2', 'localStorage']) {
   if (consoleSource.includes(forbiddenImport)) throw new Error(`Organizational console crossed private-state boundary: ${forbiddenImport}`);
 }
 if (!consoleSource.includes('validateOrganizationalPack')) throw new Error('Organizational console must validate every imported pack.');
+
+const rootLayout = stripComments(read('app', 'layout.tsx'));
+if (rootLayout.includes('SessionStageReset') || rootLayout.includes('OrganizationalSignalLayer') || rootLayout.includes('ContextLayer')) {
+  throw new Error('Root layout must not mount private-state components across organizational routes.');
+}
+
+const shellRouter = stripComments(read('app', 'shell-router.tsx'));
+const orgReturn = shellRouter.indexOf('if (isOrganizationalSurface) return');
+const privateMount = shellRouter.indexOf('<SessionStageReset');
+if (orgReturn < 0 || privateMount < 0 || orgReturn > privateMount) {
+  throw new Error('Organizational route must return before any private-state component mounts.');
+}
 
 console.log('Organizational signal contract check passed.');
