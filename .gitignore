@@ -27,3 +27,9 @@ yarn-error.log*
 
 # os
 .DS_Store
+
+# tests
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
