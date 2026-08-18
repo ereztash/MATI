@@ -12,6 +12,7 @@ const page = read('app', 'page.tsx');
 const experienceShell = read('app', 'experience-shell.tsx');
 const workSession = read('app', 'work-session-layer.tsx');
 const orgPreview = read('app', 'organizational-signal-preview.tsx');
+const orgConsole = read('app', 'org', 'organizational-console.tsx');
 const readme = read('README.md');
 const orgContract = read('docs', 'organizational-signal-contract.md');
 const structuralContract = read('lib', 'ux-structural-contract.json');
@@ -142,9 +143,13 @@ for (const claim of ['מינימליזם ועומס', 'תמציתי/עמוק']) 
 if (!readme.includes('אינה מנתחת את משמעות הטקסט החופשי לצורך התאמת UX')) issue('DOC_PURPOSE_LIMIT_MISSING', 'README must disclose that free reflection prose is not semantically mined for UX adaptation.');
 for (const window of ['יולי–ספטמבר', 'דצמבר–פברואר', 'מאי–יוני']) if (!readme.includes(window)) issue('CALENDAR_DOC_DRIFT', `README is missing stage window ${window}`);
 
-// C4: privacy claims must match every current network path, not only the signal component.
-for (const phrase of ['Reflection belongs to the instructor', 'does not yet send or aggregate signals across devices', 'may not automatically', 'assert causality']) {
-  if (!orgContract.includes(phrase)) issue('ORGANIZATIONAL_AUTHORITY_DRIFT', `Organizational contract is missing authority boundary: ${phrase}`);
+// C4: privacy claims must match every current network and aggregation path.
+for (const phrase of ['Reflection belongs to the instructor', 'no automatic cross-device collection', 'manual import of multiple packs', 'may not automatically', 'assert causality']) {
+  if (!orgContract.includes(phrase)) issue('ORGANIZATIONAL_AUTHORITY_DRIFT', `Organizational contract is missing current boundary: ${phrase}`);
+}
+if (orgContract.includes('does not aggregate across instructors')) issue('ORGANIZATIONAL_DOC_DRIFT', 'Organizational contract still claims no aggregation even though /org supports manual local multi-pack aggregation.');
+if (!orgConsole.includes('summarizeOrganizationalPacks(packs)') || !orgConsole.includes('multiple') && !orgConsole.includes('כמה קבצי MATI יחד')) {
+  issue('ORGANIZATIONAL_RUNTIME_DRIFT', '/org no longer clearly implements manual local multi-pack aggregation.');
 }
 if (!orgPreview.includes('כרגע: מקומי בלבד')) issue('PRIVACY_COPY_DRIFT', 'Instructor signal preview no longer states that the current signal state is local only.');
 if (!orgPreview.includes('ייצוא signal')) issue('PRIVACY_EXPORT_DRIFT', 'Explicit organizational signal export control is missing.');
@@ -185,5 +190,5 @@ if (issues.length) {
 }
 
 console.log(`System coherence audit passed (${requiredInvariants.length} invariants, ${reviewed.length} cross-stage representations, ${heuristics.length} inquiry-only heuristics).`);
-console.log('Representation, source-of-truth, privacy, authority, data-path and documentation boundaries are aligned.');
+console.log('Representation, source-of-truth, privacy, authority, data-path, aggregation and documentation boundaries are aligned.');
 for (const item of warnings) console.log(`PENDING: ${item.message}`);
