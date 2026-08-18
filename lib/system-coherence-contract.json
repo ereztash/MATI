@@ -142,8 +142,8 @@
       "id": "DIMENSION_SCORE_WITHOUT_EVIDENCE",
       "status": "PENDING_HUMAN_AUTHORITY",
       "protectedArea": "scores and thresholds",
-      "conflict": "scoreDimensions floors every dimension at 2/5 even when its evidence array is empty, while product copy states that missing evidence is not invented.",
-      "containment": "The conflict is registered and CI requires it to remain explicit. Do not reinterpret or change the approved score floor automatically. A domain decision must determine whether the display should suppress an unevidenced score or the scoring rule itself should change.",
+      "conflict": "scoreDimensions floors every dimension at 2/5 even when its evidence array is empty. That unevidenced internal score can also participate in strongest/weakest ordering and downstream recommendations, while product copy states that missing evidence is not invented.",
+      "containment": "The conflict is registered and CI requires it to remain explicit. Do not reinterpret or change the approved score floor automatically. Until a domain decision resolves it, any claim derived from dimension ordering must be treated as provisional when the relevant evidence array is empty. A domain decision must determine whether to suppress unevidenced dimensions from ranking/display or change the scoring rule itself.",
       "resolutionAuthority": "human product/domain decision"
     }
   ]
