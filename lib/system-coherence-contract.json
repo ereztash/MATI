@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "principle": "Representation Serves Practice",
   "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
   "invariants": [
@@ -56,6 +56,78 @@
     { "concept": "organizational_projection", "source": "docs/organizational-signal-contract.md" },
     { "concept": "organizational_signal_schema", "source": "lib/organizational-signals.ts" },
     { "concept": "context_adaptation", "source": "lib/context-engine.ts" }
+  ],
+  "reviewedCrossStageRepresentations": [
+    {
+      "earlier": "plan.smartGoal",
+      "later": "formative.context.centralGoals",
+      "earlierMeaning": "desired change at planning time",
+      "laterMeaning": "goal snapshot used to contextualize the formative checkpoint",
+      "status": "DISTINCT_TEMPORAL_MEANING"
+    },
+    {
+      "earlier": "plan.timeframe",
+      "later": "formative.context.period",
+      "earlierMeaning": "rough implementation horizon",
+      "laterMeaning": "period covered by the current formative evaluation",
+      "status": "DISTINCT_TEMPORAL_MEANING"
+    },
+    {
+      "earlier": "plan.independence",
+      "later": "formative.answers.q7.independence",
+      "earlierMeaning": "desired independence before implementation",
+      "laterMeaning": "observed/reported independence at evaluation time",
+      "status": "DISTINCT_TEMPORAL_MEANING"
+    },
+    {
+      "earlier": "plan.managers",
+      "later": "formative.answers.q6.managerCommitment",
+      "earlierMeaning": "manager involvement required by the plan",
+      "laterMeaning": "reported manager commitment during implementation",
+      "status": "DISTINCT_TEMPORAL_MEANING"
+    }
+  ],
+  "inquiryOnlyHeuristics": [
+    {
+      "id": "GOAL_RESULT_GAP",
+      "source": "lib/stages.ts#hasLargeGoalResultGap",
+      "authority": "INQUIRY_ONLY",
+      "mayGate": false,
+      "mayScore": false,
+      "mayAssertCausality": false
+    },
+    {
+      "id": "IMPLEMENTATION_INDEPENDENCE_GAP",
+      "source": "lib/context-engine.ts#findContradictions",
+      "authority": "INQUIRY_ONLY",
+      "mayGate": false,
+      "mayScore": false,
+      "mayAssertCausality": false
+    },
+    {
+      "id": "MEETING_DEPTH_GAP",
+      "source": "lib/context-engine.ts#findContradictions",
+      "authority": "INQUIRY_ONLY",
+      "mayGate": false,
+      "mayScore": false,
+      "mayAssertCausality": false
+    },
+    {
+      "id": "MANAGER_RESOURCE_GAP",
+      "source": "lib/context-engine.ts#findContradictions",
+      "authority": "INQUIRY_ONLY",
+      "mayGate": false,
+      "mayScore": false,
+      "mayAssertCausality": false
+    },
+    {
+      "id": "INDEPENDENCE_SUSTAINABILITY_GAP",
+      "source": "lib/context-engine.ts#findContradictions",
+      "authority": "INQUIRY_ONLY",
+      "mayGate": false,
+      "mayScore": false,
+      "mayAssertCausality": false
+    }
   ],
   "protectedProfessionalAreas": [
     "question wording",
