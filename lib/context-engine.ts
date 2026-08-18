@@ -1,4 +1,4 @@
-import type { InteractionProfile, MatiState, Stage } from './stages';
+import type { MatiState, Stage } from './stages';
 
 export type Daypart = 'early' | 'morning' | 'midday' | 'afternoon' | 'evening' | 'late';
 export type StagePosition = 'early' | 'middle' | 'closing' | 'between';
@@ -28,20 +28,8 @@ export type CalendarContext = {
   daysToStageEnd: number | null;
 };
 
-export type ProcessContext = {
-  activeStage: Stage;
-  planSaved: boolean;
-  formativeSaved: boolean;
-  summativeSaved: boolean;
-  historyCount: number;
-  daysSinceLastCheckpoint: number | null;
-};
-
 export type ContextSnapshot = {
   calendar: CalendarContext;
-  usage: UsageContext;
-  process: ProcessContext;
-  profile: InteractionProfile;
   signals: ContextSignal[];
   contradictions: string[];
 };
@@ -110,14 +98,6 @@ function daysBetween(a: Date, b: Date) {
   return Math.max(0, Math.round(Math.abs(a.getTime() - b.getTime()) / DAY_MS));
 }
 
-function lastCheckpointDate(state: MatiState) {
-  const candidates = [state.plan.savedAt, state.formative.savedAt, state.summative.savedAt, state.history.at(-1)?.at]
-    .map(safeDate)
-    .filter((d): d is Date => Boolean(d));
-  if (!candidates.length) return null;
-  return candidates.sort((a, b) => b.getTime() - a.getTime())[0];
-}
-
 function numeric(value: string) {
   const cleaned = String(value).replace(/[^0-9.]/g, '');
   const n = Number(cleaned);
@@ -140,13 +120,11 @@ export function buildContextSnapshot(args: {
   state: MatiState;
   activeStage: Stage;
   automaticStage: Stage | null;
-  profile: InteractionProfile;
   usage: UsageContext;
   now?: Date;
 }): ContextSnapshot {
   const now = args.now ?? new Date();
   const cal = calendarContext(now, args.automaticStage);
-  const lastCheckpoint = lastCheckpointDate(args.state);
   const lastVisit = safeDate(args.usage.lastVisitAt);
   const sessionStart = safeDate(args.usage.sessionStartedAt) ?? now;
   const sessionMinutes = Math.max(0, Math.round((now.getTime() - sessionStart.getTime()) / 60_000));
@@ -173,21 +151,7 @@ export function buildContextSnapshot(args: {
   const contradictions = findContradictions(args.state);
   contradictions.forEach((fact, index) => signals.push({ id: `discrepancy-${index}`, strength: 'strong', fact, implication: 'לברר את הפער לפני המלצה.' }));
 
-  return {
-    calendar: cal,
-    usage: args.usage,
-    profile: args.profile,
-    contradictions,
-    process: {
-      activeStage: args.activeStage,
-      planSaved: Boolean(args.state.plan.savedAt),
-      formativeSaved: Boolean(args.state.formative.savedAt),
-      summativeSaved: Boolean(args.state.summative.savedAt),
-      historyCount: args.state.history.length,
-      daysSinceLastCheckpoint: lastCheckpoint ? daysBetween(lastCheckpoint, now) : null,
-    },
-    signals,
-  };
+  return { calendar: cal, signals, contradictions };
 }
 
 export function deriveCoachStrategy(snapshot: ContextSnapshot): CoachStrategy {
