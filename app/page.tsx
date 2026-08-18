@@ -8,6 +8,8 @@ import {
   studentImprovementPercent, summarizeLongText,
 } from '../lib/stages';
 import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
+import { evaluateSmartGoal } from '../lib/smart-criteria';
+import { buildPersonalGantt, timelinePercent } from '../lib/plan-timeline';
 
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
@@ -82,14 +84,15 @@ export default function Home() {
 }
 
 function PlanMode({ state, updatePlan, savePlan, dimensions, setState }: { state: MatiState; updatePlan: (key: keyof MatiState['plan'], value: string) => void; savePlan: () => void; dimensions: ReturnType<typeof scoreDimensions>; setState: React.Dispatch<React.SetStateAction<MatiState>>; }) {
-  const goalGood = smartGoalLooksValid(state.plan.smartGoal); const lowest = [...dimensions].sort((a, b) => a.score - b.score)[0];
+  const lowest = [...dimensions].sort((a, b) => a.score - b.score)[0];
   const suggestion = ({ 'מדדים כמותיים': 'לבחור מדד אחד ולנסח מה ייחשב שינוי נראה לעין אצל צוות המוקד.', 'מערכת ואחריות': 'לקבוע שיחה קצרה עם מנהל/ת ולהגדיר החלטה אחת ומשאב אחד שנדרשים להצלחת התהליך.', 'אופרטיביות ועצמאות': 'להגדיר פעולה אחת שהמודרך יבצע לבד ומה תהיה הראיה לעצמאות.', 'לוח זמנים ויישום': 'לסמן נקודת בדיקה אחת בלוח הזמנים שבה משווים תכנון מול ביצוע.', 'רפלקציה ולמידה': 'להגדיר מראש סימן שיגרום לך לשנות את התוכנית במקום להמשיך אוטומטית.' } as Record<string,string>)[lowest.name] ?? 'לבחור פעולה קטנה אחת שאפשר לבדוק בשטח.';
   return <><div className="sectionHead"><div><span className="kicker">שלב 1 · תכנון</span><h2>בונות תוכנית שאפשר לבדוק בשטח</h2></div><p>הלוח הוא מצפן, לא סרגל. המטרה היא לדעת מה מנסים להזיז, איך נראה שינוי, ואיפה צריך להשאיר גמישות.</p></div>
-    <FormSection number="1" title="למי ומה את רוצה לשנות" tone="blue"><Field label="מי צוותי המוקד / המונחים?" value={state.plan.audience} onChange={(v) => updatePlan('audience', v)} placeholder="למשל: 8 מחנכות כיתות א׳–ב׳ בבית ספר יסודי" /><div className="fieldWithFeedback"><Field label="מטרת SMART אחת" value={state.plan.smartGoal} onChange={(v) => updatePlan('smartGoal', v)} placeholder="מה את רוצה שיקרה אחרת אצל צוותי המוקד?" />{state.plan.smartGoal && <small className={goalGood ? 'fieldOk' : 'fieldHelp'}>{goalGood ? '✓ ברור מה אמור להשתנות. המדדים ומסגרת הזמן למטה משלימים את המטרה ל־SMART.' : 'כתבי במשפט אחד מה אמור להשתנות אצל צוותי המוקד.'}</small>}</div></FormSection>
+    <FormSection number="1" title="למי ומה את רוצה לשנות" tone="blue"><Field label="מי צוותי המוקד / המונחים?" value={state.plan.audience} onChange={(v) => updatePlan('audience', v)} placeholder="למשל: 8 מחנכות כיתות א׳–ב׳ בבית ספר יסודי" /><div className="fieldWithFeedback"><Field label="מטרת SMART אחת" value={state.plan.smartGoal} onChange={(v) => updatePlan('smartGoal', v)} placeholder="מה את רוצה שיקרה אחרת אצל צוותי המוקד?" />{!state.plan.smartGoal && <small className="fieldHelp">כתבי במשפט אחד מה אמור להשתנות אצל צוותי המוקד.</small>}<SmartChecklist plan={state.plan} /></div></FormSection>
     <FormSection number="2" title="איך נדע שההשפעה באמת קרתה" tone="teal"><Field label="מדד הצלחה 1" value={state.plan.metric1} onChange={(v) => updatePlan('metric1', v)} placeholder="מה נוכל לראות או למדוד?" /><Field label="מדד הצלחה 2" value={state.plan.metric2} onChange={(v) => updatePlan('metric2', v)} placeholder="אפשר גם מדד איכותני עם ראיה ברורה" /></FormSection>
     <FormSection number="3" title="מה צריך לקרות מסביב כדי שזה יעבוד" tone="gold"><Field label="מסגרת זמן גסה" value={state.plan.timeframe} onChange={(v) => updatePlan('timeframe', v)} placeholder="ספטמבר–ינואר, אחת לשבועיים" /><Field label="איפה נדרשת גמישות?" value={state.plan.flexibility} onChange={(v) => updatePlan('flexibility', v)} placeholder="מה עשוי להשתנות בלי לשבור את המטרה?" /><Field label="איזו מעורבות מנהלים נדרשת?" value={state.plan.managers} onChange={(v) => updatePlan('managers', v)} placeholder="החלטות, משאבים, זמן, גיבוי" /><Field label="איך תיראה עצמאות של המודרך?" value={state.plan.independence} onChange={(v) => updatePlan('independence', v)} placeholder="מה הוא יעשה גם כשאת לא בחדר?" /></FormSection>
     <div className="actions"><button className="primary" onClick={savePlan}><span>אשרי ושמרי את תוכנית העבודה</span><b aria-hidden="true">←</b></button></div>
     {planSaved(state) && <Mirror dimensions={dimensions} state={state}><div className="coachingBlock"><span className="coachingLabel">צעד קטן שאפשר לעשות עכשיו</span><p>{state.plan.nextSmallStep || suggestion}</p>{!state.plan.nextSmallStep && <button className="secondary" onClick={() => setState((s) => ({ ...s, plan: { ...s.plan, nextSmallStep: suggestion } }))}>אמצי את הצעד לתוכנית</button>}<div className="socraticGrid"><TextArea label="איך ההצעה מתיישבת עם האני המקצועי שלך?" value={state.plan.identityFit} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, identityFit: v } }))} rows={3} /><TextArea label="מה ייתן לך ביטחון לבצע את הצעד הזה?" value={state.plan.confidenceNeed} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, confidenceNeed: v } }))} rows={3} /></div></div></Mirror>}
+    {planSaved(state) && <PersonalGanttView state={state} />}
   </>;
 }
 
@@ -140,3 +143,30 @@ function EffectivenessAverage({ value }: { value: number }) { const label = valu
 function MetricCard({ label, value }: { label: string; value: string }) { return <div className="metricCard"><span>{label}</span><strong>{value}</strong></div>; }
 function DimensionGrid({ dimensions }: { dimensions: ReturnType<typeof scoreDimensions> }) { return <div className="dimensionGrid">{dimensions.map((item) => <div className="dimension" key={item.name}><div><b>{item.name}</b><Stars score={item.score} /></div><p>{item.note}</p><small>{item.evidence.length ? item.evidence.slice(0, 2).join(' · ') : 'עדיין חסרה ראיה קונקרטית.'}</small></div>)}</div>; }
 function Mirror({ dimensions, state, children }: { dimensions: ReturnType<typeof scoreDimensions>; state: MatiState; children?: React.ReactNode }) { const sorted = [...dimensions].sort((a, b) => a.score - b.score); const lowest = sorted[0]; const strongest = sorted[sorted.length - 1]; const questions: Record<string, string> = { 'רפלקציה ולמידה': 'איזה סימן בשטח יגרום לך לשנות כיוון במקום להמשיך לפי התוכנית המקורית?', 'מדדים כמותיים': 'איזו ראיה אחת תאפשר למישהו שלא היה בתהליך לראות שהתרחש שינוי?', 'לוח זמנים ויישום': 'איפה צפוי הפער הגדול ביותר בין מה שתכננת לבין מה שאפשר באמת לבצע?', 'מערכת ואחריות': 'איזו החלטה נמצאת אצל מנהל/ת או צוות, ולא נכון שתישאר בבעלותך?', 'אופרטיביות ועצמאות': 'מה המודרך יעשה בעצמו כדי שתדעי שההדרכה לא יצרה תלות?' }; return <section className="mirror"><div className="sectionHead compact"><div><span className="kicker">המראה המקצועית</span><h3>מה התכנון כבר מחזיק — ומה עדיין צריך לחזק</h3></div><p>הדירוג מתייחס לראיות שנמצאות בתוכנית, לא לאישיות ולא לערך המקצועי שלך.</p></div><div className="strengthBanner"><span aria-hidden="true">✦</span><div><b>חוזקה שנראית כרגע: {strongest.name}</b><p>{strongest.evidence[0] || 'זה הממד החזק יחסית בתמונה הנוכחית.'}</p></div></div><DimensionGrid dimensions={dimensions} /><div className="opportunity"><span className="opportunityLabel">ההזדמנות הקריטית</span><b>{lowest.name}</b><p>{questions[lowest.name]}</p><p className="whyItMatters"><strong>למה זה משנה:</strong> תוכנית טובה לא רק מתארת מה תעשי; היא מאפשרת לדעת מה השתנה ומי מחזיק את השינוי אחרייך.</p><p className="beforeAfter"><strong>לפני:</strong> “דיברנו על התאמות.” <strong>אחרי:</strong> “בשלושה מתוך ארבעה שיעורים המורה בחרה התאמה בעצמה והסבירה למה.”</p></div>{children}</section>; }
+
+function SmartChecklist({ plan }: { plan: MatiState['plan'] }) {
+  if (!plan.smartGoal.trim()) return null;
+  const evaluation = evaluateSmartGoal(plan);
+  return <div className="smartChecklist"><ul>{evaluation.criteria.map((c) => <li key={c.letter} className={c.met ? 'smartMet' : 'smartMissing'}><b aria-hidden="true">{c.met ? '✓' : '○'}</b><span><strong>{c.label}</strong>{!c.met && ` — ${c.hint}`}</span></li>)}</ul><small className="smartReflect">{evaluation.achievableReflection}</small></div>;
+}
+
+function PersonalGanttView({ state }: { state: MatiState }) {
+  const gantt = useMemo(() => buildPersonalGantt(state), [state]);
+  if (!gantt) return null;
+  const { start, end, now, milestones } = gantt;
+  const todayPct = timelinePercent(now, start, end);
+  const fmt = (d: Date) => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
+  const bands = milestones.filter((m) => m.rangeEnd);
+  const marks = milestones.filter((m) => !m.rangeEnd);
+  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה שנשאר ריק פשוט לא מקבל נקודת דרך — שום תאריך לא מומצא.</p></div>
+    <div className="ganttTrack" role="img" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}, עם ${milestones.length} נקודות דרך`}>
+      <div className="ganttBar">
+        {bands.map((m) => <div key={m.kind} className="ganttBand" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} title={`${m.label}: ${fmt(m.date)}–${fmt(m.rangeEnd!)}`} />)}
+        {marks.map((m) => <span key={m.kind} className="ganttMark" style={{ right: `${timelinePercent(m.date, start, end)}%` }} title={`${m.label}: ${fmt(m.date)}`} />)}
+        <div className="ganttToday" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>
+      </div>
+      <div className="ganttAxis"><span>{fmt(start)}</span><span>{fmt(end)}</span></div>
+    </div>
+    <ul className="ganttLegend">{milestones.map((m) => <li key={m.kind}><b aria-hidden="true" className={m.rangeEnd ? 'ganttDot band' : 'ganttDot'} /><span><strong>{m.label}</strong> · {fmt(m.date)}{m.rangeEnd ? `–${fmt(m.rangeEnd)}` : ''}</span><small>{m.detail}</small></li>)}</ul>
+  </section>;
+}
