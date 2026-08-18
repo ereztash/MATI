@@ -149,6 +149,42 @@
 .workExperience .mainCard { border-radius: 22px; }
 .workExperience footer { opacity: .7; }
 
+.workSessionBar {
+  position: sticky;
+  top: 68px;
+  z-index: 65;
+  width: min(980px, calc(100% - 32px));
+  margin: 18px auto -2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 240px) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid #dbe4e9;
+  border-radius: 16px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 12px 30px rgba(34, 55, 72, .07);
+  backdrop-filter: blur(12px);
+}
+.workSessionMeta { display: grid; gap: 3px; min-width: 0; }
+.workSessionMeta span { color: #6d7e8a; font-size: .76rem; font-weight: 800; }
+.workSessionMeta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .96rem; }
+.workSessionProgress { height: 7px; overflow: hidden; border-radius: 999px; background: #e8eef2; }
+.workSessionProgress i { display: block; height: 100%; border-radius: inherit; background: #2f6fb2; transition: width .2s ease; }
+.workSessionActions { display: inline-flex; gap: 8px; }
+.workSessionActions button { min-height: 40px; padding: 0 14px; border-radius: 10px; font: inherit; font-weight: 800; cursor: pointer; }
+.workSessionSecondary { border: 1px solid #d7e0e5; background: #fff; color: #506674; }
+.workSessionSecondary:disabled { opacity: .42; cursor: default; }
+.workSessionPrimary { border: 0; background: #2f6fb2; color: #fff; }
+
+html[data-work-session="on"] .view-work .workExperience .sectionHead { margin-bottom: 18px; }
+html[data-work-session="on"] .view-work .workExperience .mainCard { min-height: 420px; }
+html[data-work-session="on"] .view-work .workExperience .assessmentStack { min-height: 380px; }
+html[data-work-session="on"] .view-work .workExperience .assessmentSection[hidden],
+html[data-work-session="on"] .view-work .workExperience .formSection[hidden],
+html[data-work-session="on"] .view-work .workExperience .summativeStack > [hidden] { display: none !important; }
+html[data-work-session="on"] .view-work .workExperience .actions { margin-top: 14px; }
+
 @media (max-width: 820px) {
   .experienceTopbar { grid-template-columns: 1fr auto; gap: 10px; padding: 8px 12px; }
   .experiencePrivacy { display: none; }
@@ -158,6 +194,8 @@
   .homeDecisionCard { grid-template-columns: 1fr; }
   .homePrimary { width: 100%; }
   .homeGrid, .insightHeroGrid { grid-template-columns: 1fr; }
+  .workSessionBar { top: 104px; grid-template-columns: 1fr auto; }
+  .workSessionProgress { grid-column: 1 / -1; grid-row: 2; }
 }
 
 @media (max-width: 560px) {
@@ -167,4 +205,8 @@
   .homeDecisionCard, .insightCard, .nextDecision, .emptyInsight, .emptyJourney { padding: 22px; border-radius: 18px; }
   .evidenceStrip { grid-template-columns: 1fr; }
   .yearRail b { font-size: .74rem; }
+  .workSessionBar { width: calc(100% - 20px); grid-template-columns: 1fr; top: 104px; gap: 10px; }
+  .workSessionActions { width: 100%; }
+  .workSessionActions button { flex: 1; }
+  .workSessionProgress { grid-column: auto; grid-row: auto; }
 }

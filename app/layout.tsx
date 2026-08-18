@@ -6,6 +6,7 @@ import './experience.css';
 import ContextLayer from './context-layer';
 import SessionStageReset from './session-stage-reset';
 import ExperienceShell from './experience-shell';
+import WorkSessionLayer from './work-session-layer';
 
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <SessionStageReset />
         <ExperienceShell>
           <ContextLayer />
+          <WorkSessionLayer />
           {children}
         </ExperienceShell>
       </body>
