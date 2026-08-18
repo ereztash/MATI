@@ -20,8 +20,6 @@ export type ContextSignal = {
 };
 
 export type CalendarContext = {
-  localHour: number;
-  weekday: number;
   daypart: Daypart;
   stage: Stage | null;
   stagePosition: StagePosition;
@@ -79,13 +77,13 @@ function stageWindow(date: Date, stage: Stage | null) {
 
 export function calendarContext(date: Date, stage: Stage | null): CalendarContext {
   const window = stageWindow(date, stage);
-  if (!window) return { localHour: date.getHours(), weekday: date.getDay(), daypart: daypartFromHour(date.getHours()), stage, stagePosition: 'between', daysToStageEnd: null };
+  if (!window) return { daypart: daypartFromHour(date.getHours()), stage, stagePosition: 'between', daysToStageEnd: null };
   const total = Math.max(1, window.end.getTime() - window.start.getTime());
   const elapsed = Math.max(0, Math.min(total, date.getTime() - window.start.getTime()));
   const ratio = elapsed / total;
   const stagePosition: StagePosition = ratio < 0.28 ? 'early' : ratio < 0.72 ? 'middle' : 'closing';
   const daysToStageEnd = Math.max(0, Math.ceil((window.end.getTime() - date.getTime()) / DAY_MS));
-  return { localHour: date.getHours(), weekday: date.getDay(), daypart: daypartFromHour(date.getHours()), stage, stagePosition, daysToStageEnd };
+  return { daypart: daypartFromHour(date.getHours()), stage, stagePosition, daysToStageEnd };
 }
 
 function safeDate(value?: string) {
