@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "principle": "Representation Serves Practice",
   "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
   "invariants": [
@@ -57,6 +57,11 @@
       "id": "C7_NO_SILENT_CLASSIFICATION",
       "class": "coherence",
       "rule": "When the professional model explicitly permits an unresolved state, UI and support layers must preserve that unresolved state rather than substituting a convenient default."
+    },
+    {
+      "id": "C8_CANONICAL_STATE_INTERPRETATION",
+      "class": "coherence",
+      "rule": "The same persisted MATI snapshot must hydrate to the same semantic state in every layer. Support surfaces may not maintain independent parsers or shallower merge rules."
     }
   ],
   "sourcesOfTruth": [
@@ -64,6 +69,7 @@
     { "concept": "stage2_partial_gate", "source": "lib/ux-structural-contract.json#stage2-formative" },
     { "concept": "stage3_question_units", "source": "lib/ux-structural-contract.json#stage3-summative" },
     { "concept": "stage_calendar_classification", "source": "lib/stages.ts#stageFromDate" },
+    { "concept": "persisted_state_interpretation", "source": "lib/state-hydration.ts" },
     { "concept": "organizational_projection", "source": "docs/organizational-signal-contract.md" },
     { "concept": "organizational_signal_schema", "source": "lib/organizational-signals.ts" },
     { "concept": "context_adaptation", "source": "lib/context-engine.ts" }
