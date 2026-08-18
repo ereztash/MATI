@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { emptyState, FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
+import { FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
+import { readStoredMatiState } from '../lib/state-hydration';
 
-const STATE_KEY = 'mati-v2';
 const shortIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q5', 'q8', 'q9'];
 const fullIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
 const summativeGroupSizes = [2, 1, 1] as const;
@@ -12,27 +12,7 @@ const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מע
 type WorkItem = { elements: HTMLElement[] };
 
 function readState(): MatiState {
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return emptyState;
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: { ...emptyState.formative.answers, ...(source.formative?.answers ?? {}) },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
+  return readStoredMatiState();
 }
 
 function currentStage(state: MatiState): Stage | null {
