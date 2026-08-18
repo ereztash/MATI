@@ -47,6 +47,26 @@ test('the formative window ends Feb 29 in a leap year and Feb 28 otherwise', () 
   assert.equal(leapFormative.rangeEnd!.getDate(), 29);
 });
 
+test('a window that already closed before the timeline starts is omitted, not faked at 0%', () => {
+  // Stage 1 is always open (canOpenStage(1,...) === true), so a plan can be
+  // (re-)saved during March-April — the calendar gap right after the
+  // formative window's own Dec-Feb close. That formative window belongs
+  // entirely to the past relative to this new start date; showing it would
+  // clamp both ends to 0% and render a fabricated sliver, with legend dates
+  // outside the displayed axis.
+  const midGap = buildPersonalGantt(stateWith(savedPlan({}, '2027-03-15T09:00:00.000Z')))!;
+  assert.equal(midGap.milestones.some((m) => m.kind === 'formativeWindow'), false);
+  // The summative window (May-Jun of the same year) is still ahead of March, so it stays.
+  assert.equal(midGap.milestones.some((m) => m.kind === 'summativeWindow'), true);
+
+  // The ordinary Jul-Sep save keeps both fixed windows, as already covered
+  // by 'optional milestones appear only when their source field is filled
+  // in' above — this test only needs to prove the gap case is the
+  // exception, not the rule.
+  const normal = buildPersonalGantt(stateWith(savedPlan({}, '2026-08-10T09:00:00.000Z')))!;
+  assert.equal(normal.milestones.some((m) => m.kind === 'formativeWindow'), true);
+});
+
 test('optional milestones appear only when their source field is filled in — nothing is invented', () => {
   const bare = buildPersonalGantt(stateWith(savedPlan()))!;
   assert.equal(bare.milestones.some((m) => m.kind === 'smallStep'), false);

@@ -182,13 +182,16 @@ function PersonalGanttView({ state, setState }: { state: MatiState; setState: Re
     setState((s) => ({ ...s, plan: { ...s.plan, [m.adjustable!.overrideKey]: '' } }));
   }
 
-  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה שנשאר ריק פשוט לא מקבל נקודת דרך — שום תאריך לא מומצא. אפשר לפתוח כל שורה למטה כדי לכוונן את התאריך שלה.</p></div>
+  const todayInRange = now.getTime() >= start.getTime() && now.getTime() <= end.getTime();
+
+  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה ריק לא מקבל נקודת דרך. התאריך לכל נקודת דרך אישית הוא הצעה שאפשר לכוונן בכל שורה למטה — לא עובדה קבועה, בשונה משני חלונות ההערכה.</p></div>
     <div className="ganttTrack" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}${cadence ? `, קצב מפגשים שזוהה: ${cadence.label}` : ''}`}>
       <div className="ganttBar">
         {cadence && <div className="ganttCadence" aria-hidden="true" />}
         {bands.map((m) => <div key={m.kind} className="ganttBand" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} />)}
         {marks.map((m) => <span key={m.kind} className="ganttMark" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%` }} />)}
-        <div className="ganttToday" aria-hidden="true" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>
+        {/* Pinning "today" to an edge when it's actually outside [start,end] (an old plan viewed much later, say) would misreport where today really is — so it only renders inside the range it can honestly represent. */}
+        {todayInRange && <div className="ganttToday" aria-hidden="true" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>}
       </div>
       <div className="ganttAxis" aria-hidden="true"><span>{fmt(start)}</span><span>{fmt(end)}</span></div>
     </div>

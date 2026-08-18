@@ -168,10 +168,20 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
     });
   }
 
+  // A plan (re-)saved after February — e.g. Stage 1 reopened manually during
+  // the March–April calendar gap — belongs to a school year whose formative
+  // window already closed before `start`. Showing it anyway would clamp both
+  // ends to 0% and render a fabricated sliver at the very start, with legend
+  // dates that fall outside the displayed axis; omit a window that closed
+  // before the timeline even begins rather than fake its position.
   const formative = formativeWindowAfter(start);
-  milestones.push({ kind: 'formativeWindow', label: 'הערכה מעצבת', detail: 'חלון הגאנט הקבוע להערכה המעצבת.', date: formative.start, rangeEnd: formative.end });
+  if (formative.end.getTime() >= start.getTime()) {
+    milestones.push({ kind: 'formativeWindow', label: 'הערכה מעצבת', detail: 'חלון הגאנט הקבוע להערכה המעצבת.', date: formative.start, rangeEnd: formative.end });
+  }
   const summative = summativeWindowAfter(start);
-  milestones.push({ kind: 'summativeWindow', label: 'הערכה מסכמת', detail: 'חלון הגאנט הקבוע להערכה המסכמת.', date: summative.start, rangeEnd: summative.end });
+  if (summative.end.getTime() >= start.getTime()) {
+    milestones.push({ kind: 'summativeWindow', label: 'הערכה מסכמת', detail: 'חלון הגאנט הקבוע להערכה המסכמת.', date: summative.start, rangeEnd: summative.end });
+  }
 
   milestones.sort((a, b) => a.date.getTime() - b.date.getTime());
 
