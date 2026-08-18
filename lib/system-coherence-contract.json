@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "principle": "Representation Serves Practice",
   "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
   "invariants": [
@@ -52,12 +52,18 @@
       "id": "C6_DOCS_COPY_CODE_ALIGN",
       "class": "coherence",
       "rule": "README, contracts, user-facing guidance and implementation must describe the same currently deployed behavior."
+    },
+    {
+      "id": "C7_NO_SILENT_CLASSIFICATION",
+      "class": "coherence",
+      "rule": "When the professional model explicitly permits an unresolved state, UI and support layers must preserve that unresolved state rather than substituting a convenient default."
     }
   ],
   "sourcesOfTruth": [
     { "concept": "stage1_gate", "source": "lib/ux-structural-contract.json#stage1-plan" },
     { "concept": "stage2_partial_gate", "source": "lib/ux-structural-contract.json#stage2-formative" },
     { "concept": "stage3_question_units", "source": "lib/ux-structural-contract.json#stage3-summative" },
+    { "concept": "stage_calendar_classification", "source": "lib/stages.ts#stageFromDate" },
     { "concept": "organizational_projection", "source": "docs/organizational-signal-contract.md" },
     { "concept": "organizational_signal_schema", "source": "lib/organizational-signals.ts" },
     { "concept": "context_adaptation", "source": "lib/context-engine.ts" }
