@@ -2,13 +2,16 @@
 .hero { max-width: 820px; margin-bottom: 28px; }
 .hero > span, .sectionHead span { color: #647983; font-size: .8rem; font-weight: 900; }
 .hero h1 { margin: 8px 0 12px; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.05; letter-spacing: -.04em; }
-.hero p, .sectionHead p, .intake p, .empty p, .privacyBlock p, .patternCard p, .footer { color: #667883; line-height: 1.65; }
+.hero p, .sectionHead p, .intake p, .empty p, .privacyBlock p, .patternCard p, .footer, .limit p { color: #667883; line-height: 1.65; }
 .back { display: inline-block; margin-bottom: 28px; color: #2f6fb2; text-decoration: none; font-weight: 800; }
 .intake { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 24px; padding: 24px 26px; background: #fff; border: 1px solid #dce4e8; border-radius: 22px; }
 .intake strong { font-size: 1.18rem; }
 .intake p { margin: 5px 0 0; }
+.intakeActions { display: inline-flex; align-items: center; gap: 8px; }
 .upload { min-height: 46px; display: inline-grid; place-items: center; padding: 0 18px; border-radius: 12px; background: #2f6fb2; color: #fff; font-weight: 900; cursor: pointer; }
 .upload input { display: none; }
+.secondary { min-height: 42px; padding: 0 14px; border: 1px solid #ccd8de; border-radius: 10px; background: #fff; color: #496170; font: inherit; font-weight: 800; cursor: pointer; }
+.importNote { margin: 10px 2px 0; color: #567165; font-size: .82rem; }
 .errors { margin-top: 14px; padding: 14px 18px; border: 1px solid #d8a9a4; border-radius: 14px; background: #fff7f6; }
 .errors p { margin: 0; color: #8f3d34; }
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
@@ -22,7 +25,7 @@
 .patterns { margin-top: 34px; }
 .sectionHead { display: grid; grid-template-columns: 1fr minmax(280px, 420px); gap: 30px; align-items: end; margin-bottom: 16px; }
 .sectionHead h2 { margin: 6px 0 0; font-size: 2rem; }
-.sectionHead p { margin: 0; }
+.sectionHead p { margin: 0 0 10px; }
 .patternGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 .patternCard { padding: 22px; border: 1px solid #dce4e8; border-radius: 18px; background: #fff; }
 .patternCard.surfaceable { border-right: 5px solid #2f6fb2; }
@@ -35,5 +38,8 @@
 .patternStats span { color: #73828b; font-size: .72rem; }
 .patternCard p { margin: 10px 0; }
 .patternCard strong { display: block; margin-top: 14px; color: #2f597d; line-height: 1.55; }
-.footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #dce4e8; font-size: .82rem; }
-@media (max-width: 760px) { .shell { padding-top: 28px; } .intake, .sectionHead { grid-template-columns: 1fr; } .upload { width: 100%; } .kpis { grid-template-columns: repeat(2, 1fr); } .patternGrid { grid-template-columns: 1fr; } }
+.limit { margin-top: 22px; padding: 17px 20px; border: 1px solid #d9e0e4; border-radius: 14px; background: #f9fbfc; }
+.limit strong { font-size: .84rem; }
+.limit p { margin: 5px 0 0; font-size: .8rem; }
+.footer { margin-top: 28px; padding-top: 20px; border-top: 1px solid #dce4e8; font-size: .82rem; }
+@media (max-width: 760px) { .shell { padding-top: 28px; } .intake, .sectionHead { grid-template-columns: 1fr; } .intakeActions { width: 100%; } .upload { flex: 1; } .kpis { grid-template-columns: repeat(2, 1fr); } .patternGrid { grid-template-columns: 1fr; } }
