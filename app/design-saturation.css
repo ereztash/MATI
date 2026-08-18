@@ -41,7 +41,9 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline:3px solid rgba(66,111,134,.30)!important;
+  /* Solid --soft-action-strong: >=6.3:1 against every surface it can land on.
+     The previous 30% tint measured 1.49:1, far under the 3:1 floor. */
+  outline:3px solid var(--soft-action-strong)!important;
   outline-offset:3px!important;
 }
 

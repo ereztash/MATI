@@ -112,10 +112,50 @@ test('saving a plan opens stage 2 and records a checkpoint', async ({ page }) =>
 test('stage 2 stays locked until a plan is actually saved', async ({ page }) => {
   await page.goto('/');
   await nav(page, 'עבודה');
-  // The locked stage button carries aria-disabled but is still meant to be
-  // clicked, so it can explain what is missing. force is needed to click past
-  // Playwright's actionability check — see the accessibility note in the review.
-  await page.locator('.stageStrip button').nth(1).click({ force: true });
+  // The locked stage button is a real actionable button (no aria-disabled) so it
+  // can explain what is missing — see finding N2 in the review.
+  await page.locator('.stageStrip button').nth(1).click();
   await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
   await expect(page.locator('.view-work .assessmentSection')).toHaveCount(0);
+});
+
+test('editing a field on a saved plan does not silently re-lock stage 2', async ({ page }) => {
+  // Regression (finding 8): every plan/context/answer updater cleared savedAt on
+  // each keystroke, so fixing a typo in an already-saved plan re-locked stage 2
+  // with no indication why. planReady still gates a genuinely incomplete field.
+  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  // WorkSessionLayer computes its initial section asynchronously: for an
+  // already-complete plan it starts at index 0 and then jumps to the last
+  // section a beat later, re-hiding whatever was force-unhidden in between.
+  // toPass() re-applies the unhide until a fill actually sticks.
+  const audienceField = page.locator('.field', { hasText: 'מי צוותי המוקד' }).locator('input').first();
+  await expect(async () => {
+    await page.evaluate(() =>
+      document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; }));
+    await audienceField.fill(`${savedPlan.audience} (תוקן)`, { timeout: 500 });
+  }).toPass({ timeout: 5000 });
+  await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
+
+  await page.locator('.stageStrip button').nth(1).click();
+  await expect(page.locator('.view-work .sectionHead .kicker').first()).toHaveText('שלב 2 · הערכה מעצבת');
+
+  // Emptying a required field must still close the gate — this is not a blanket
+  // "never re-lock", only "don't re-lock just because something was typed".
+  await nav(page, 'עבודה');
+  await page.locator('.stageStrip button').first().click();
+  await expect(async () => {
+    await page.evaluate(() =>
+      document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; }));
+    await audienceField.fill('', { timeout: 500 });
+  }).toPass({ timeout: 5000 });
+  // Wait for the cleared field to actually reach storage before judging the
+  // gate on it — savedAt itself must stay untouched (fix for finding 8).
+  await expect.poll(async () => (await readStored(page)).plan?.audience).toBe('');
+  // savedAt only clears on explicit save — must stay true here.
+  await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
+  await page.locator('.stageStrip button').nth(1).click();
+  await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
 });
