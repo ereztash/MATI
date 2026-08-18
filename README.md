@@ -10,7 +10,7 @@
 - חודשים שבין החלונות אינם מנוחשים — המערכת מבקשת לבחור שלב.
 - מעבר לשלב 2 מחייב **תוכנית עבודה שמורה** עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן.
 - מעבר לשלב 3 מחייב לפחות התחלה של ההערכה המעצבת.
-- בדיקת SMART בסיסית למטרה: זמן + רכיב מדיד.
+- שדה המטרה נבדק על תוכן בלבד. המדידוּת ומסגרת הזמן נאספות בשדות ייעודיים נפרדים, כדי לא לדרוש מהמדריכה לחזור על אותו מידע פעמיים בתוך משפט אחד.
 - מסלול ממוקד: סעיפים 1, 2, 5, 8, 9. מסלול מלא: כל תשעת הסעיפים.
 - כל תתי־המדדים של השאלון נשמרים כשדות נפרדים: דירוגי 1–5 ו־1–10, אחוזים, מפגשים, תצפיות, תלמידים, שעות שטח, מנהלים, משאבים, תרבות, עצמאות ועוד.
 - חישובי אחוזים מתוך הנתונים: תלמידי מוקד שהשתפרו, מימוש שעות שטח, פגישות מנהלים וממוצע אפקטיביות.
@@ -20,6 +20,7 @@
 - שלב 3 כולל הישג + מדד, נקודת מפנה, שינוי לשנה הבאה ו־rubric מותאם לפערים שנמדדו.
 - שכבת התאמה דטרמיניסטית ראשונה לקצב וסגנון מענה: תמציתי/עמוק, אנליטי/אינטואיטיבי/מעורב, מינימליזם ועומס.
 - RTL מלא, Heebo, mobile responsive, labels גלויים, focus states ואזורי לחיצה נוחים.
+- מסלול ארגוני נפרד ב־`/org`: ייצוא חבילת signal מובנית מצד המדריכה, וקונסולה מקומית שמצרפת חבילות ומציגה דפוס רק מעל רצפת פרטיות של 5 משתתפות.
 
 ## עקרונות מוצר
 
@@ -37,12 +38,28 @@
 
 ```text
 app/
-├── layout.tsx      # RTL, metadata, Heebo
-├── page.tsx        # flow, structured forms, analysis and adaptive UX
-└── globals.css     # design system, states and responsive UI
+├── layout.tsx                     # RTL, metadata, Heebo, stylesheet order
+├── shell-router.tsx               # keeps /org clear of every private-state component
+├── page.tsx                       # the three stages: forms, gates and professional analysis
+├── experience-shell.tsx           # top navigation and the home / insight / journey shells
+├── context-layer.tsx              # the contextual ribbon: calendar, device, pace, contradictions
+├── work-session-layer.tsx         # one section at a time inside a stage
+├── session-stage-reset.tsx        # drops a manually chosen stage at the start of a session
+├── organizational-signal-layer.tsx  # derives structured signals, no free text
+├── organizational-signal-preview.tsx # the boundary card and the signal export
+├── org/                           # the organizational console, isolated from private state
+└── *.css                          # globals, context, experience, organizational, design-saturation
 
 lib/
-└── stages.ts       # schema, stage gates, calculations, scoring and deterministic adaptation
+├── stages.ts                      # schema, stage gates, calculations and scoring
+├── state-storage.ts               # the single reader/migrator for the saved state
+├── context-engine.ts              # calendar windows, context signals and coaching strategy
+├── organizational-signals.ts      # signal extraction, privacy floor, systemic classification
+├── organizational-pack.ts         # strict pack schema, validation and aggregation
+├── download-json.ts               # browser download helper
+└── ux-structural-contract.json    # the flow contract the semantic audit checks against
+
+scripts/                           # three contract checks, all wired into CI
 ```
 
 ## Stack
@@ -57,10 +74,16 @@ lib/
 ## פיתוח
 
 ```bash
-npm install
+npm ci                    # התקנה נעולה לפי package-lock.json
 npm run dev
 npm run build
+
+npm run check:signals     # גבול המידע הארגוני: אין טקסט חופשי במסלול ה־signal
+npm run check:design      # RTL, focus, reduced-motion, שטחי מגע
+npm run check:semantic-ux # חוזה הזרימה: שערים, מסלולים ויחידות UI
 ```
+
+שלוש הבדיקות רצות ב־CI לפני הבנייה.
 
 Production pilot: `https://mati-alpha.vercel.app`
 

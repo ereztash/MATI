@@ -1,39 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { emptyState, FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
+import { FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
+import { readStoredState } from '../lib/state-storage';
 
-const STATE_KEY = 'mati-v2';
 const shortIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q5', 'q8', 'q9'];
 const fullIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
 const summativeGroupSizes = [2, 1, 1] as const;
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 
 type WorkItem = { elements: HTMLElement[] };
-
-function readState(): MatiState {
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return emptyState;
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: { ...emptyState.formative.answers, ...(source.formative?.answers ?? {}) },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
-}
 
 function currentStage(state: MatiState): Stage {
   return (state.manualStage ?? stageFromDate() ?? 1) as Stage;
@@ -107,7 +83,7 @@ export default function WorkSessionLayer() {
     const sync = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const state = readState();
+        const state = readStoredState();
         const nextStage = currentStage(state);
         const candidates = workItemsFor(nextStage);
         if (!candidates.length) return;
@@ -152,14 +128,14 @@ export default function WorkSessionLayer() {
   const progress = useMemo(() => count ? Math.round(((index + 1) / count) * 100) : 0, [count, index]);
 
   const finish = () => {
-    const before = savedStamp(readState(), stage);
+    const before = savedStamp(readStoredState(), stage);
     const saveButton = document.querySelector<HTMLButtonElement>('.view-work .workExperience .actions .primary');
     if (!saveButton) { openInsight(); return; }
     saveButton.click();
     let attempts = 0;
     const check = window.setInterval(() => {
       attempts += 1;
-      const after = savedStamp(readState(), stage);
+      const after = savedStamp(readStoredState(), stage);
       if (after && after !== before) {
         clearInterval(check);
         openInsight();

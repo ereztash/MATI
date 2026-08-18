@@ -7,37 +7,10 @@ import {
   rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, Stage, stageFromDate,
   studentImprovementPercent, summarizeLongText,
 } from '../lib/stages';
+import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
 
-const STORAGE_KEY = 'mati-v2';
-const LEGACY_KEY = 'mati-v1';
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
-
-function migrateState(raw: unknown): MatiState {
-  if (!raw || typeof raw !== 'object') return emptyState;
-  const source = raw as Record<string, any>;
-  const legacyAnswers = source.formative?.answers ?? {};
-  const isLegacy = typeof legacyAnswers.q1 === 'string' || typeof legacyAnswers.q2 === 'string';
-  const migratedAnswers = isLegacy ? {
-    ...emptyState.formative.answers,
-    q1: { ...emptyState.formative.answers.q1, evidence: legacyAnswers.q1 ?? '' },
-    q2: { ...emptyState.formative.answers.q2, evidence: legacyAnswers.q2 ?? '' },
-    q3: { ...emptyState.formative.answers.q3, notes: legacyAnswers.q3 ?? '' },
-    q4: { ...emptyState.formative.answers.q4, evidence: legacyAnswers.q4 ?? '' },
-    q5: { ...emptyState.formative.answers.q5, reflection: legacyAnswers.q5 ?? '' },
-    q6: { ...emptyState.formative.answers.q6, culturePositiveSign: legacyAnswers.q6 ?? '' },
-    q7: { ...emptyState.formative.answers.q7, evidence: legacyAnswers.q7 ?? '' },
-    q8: { ...emptyState.formative.answers.q8, didNotWork: legacyAnswers.q8 ?? '' },
-    q9: { ...emptyState.formative.answers.q9 },
-  } : Object.fromEntries(Object.entries(emptyState.formative.answers).map(([key, value]) => [key, { ...(value as Record<string, unknown>), ...(legacyAnswers[key] ?? {}) }])) as FormativeAnswers;
-  return {
-    ...emptyState, ...source,
-    plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-    formative: { ...emptyState.formative, ...(source.formative ?? {}), context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) }, answers: migratedAnswers, post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) } },
-    summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-    history: Array.isArray(source.history) ? source.history : [],
-  };
-}
 
 function Stars({ score }: { score: number }) { return <span className="stars" aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>; }
 
@@ -52,9 +25,10 @@ export default function Home() {
   const profile = useMemo(() => analyzeInteraction(state), [state]);
 
   useEffect(() => {
-    try { const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_KEY); if (raw) setState(migrateState(JSON.parse(raw))); }
-    catch { setNotice('לא הצלחתי לקרוא את המידע השמור. אפשר להתחיל מחדש בלי לאבד את המשך העבודה הנוכחי.'); }
-    finally { setHydrated(true); }
+    const loaded = loadStoredState();
+    setState(loaded.state);
+    if (loaded.corrupted) setNotice('לא הצלחתי לקרוא את המידע השמור. אפשר להתחיל מחדש בלי לאבד את המשך העבודה הנוכחי.');
+    setHydrated(true);
   }, []);
   useEffect(() => { if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state, hydrated]);
 

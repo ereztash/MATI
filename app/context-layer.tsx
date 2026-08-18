@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { analyzeInteraction, emptyState, MatiState, stageFromDate, Stage } from '../lib/stages';
+import { readStoredState } from '../lib/state-storage';
 import {
   buildContextSnapshot,
   deriveCoachStrategy,
@@ -10,34 +11,7 @@ import {
   UsageContext,
 } from '../lib/context-engine';
 
-const STATE_KEY = 'mati-v2';
 const USAGE_KEY = 'mati-usage-v1';
-
-function hydrateState(raw: string | null): MatiState {
-  if (!raw) return emptyState;
-  try {
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: {
-          ...emptyState.formative.answers,
-          ...(source.formative?.answers ?? {}),
-        },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
-}
 
 function deviceFromWidth(width: number): DeviceClass {
   if (width < 720) return 'mobile';
@@ -79,7 +53,7 @@ export default function ContextLayer() {
     const now = new Date();
     const initialUsage = readUsage(now);
     setUsage(initialUsage);
-    setState(hydrateState(localStorage.getItem(STATE_KEY)));
+    setState(readStoredState());
     persistUsage(initialUsage);
 
     let interactions = 0;
@@ -88,7 +62,7 @@ export default function ContextLayer() {
       interactions += 1;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        setState(hydrateState(localStorage.getItem(STATE_KEY)));
+        setState(readStoredState());
         setUsage((current) => current ? { ...current, interactionCount: interactions } : current);
         setTick((v) => v + 1);
       }, 180);
@@ -97,8 +71,11 @@ export default function ContextLayer() {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') setUsage((current) => { if (current) persistUsage(current, interactions); return current; });
     };
+    // Closed-choice answers (scales, option groups) are <button> clicks and emit
+    // neither input nor change, so a click listener is required to see them.
     window.addEventListener('input', refresh, true);
     window.addEventListener('change', refresh, true);
+    window.addEventListener('click', refresh, true);
     window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     const minuteTicker = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -107,6 +84,7 @@ export default function ContextLayer() {
       clearInterval(minuteTicker);
       window.removeEventListener('input', refresh, true);
       window.removeEventListener('change', refresh, true);
+      window.removeEventListener('click', refresh, true);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       persistUsage(initialUsage, interactions);
