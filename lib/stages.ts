@@ -73,10 +73,8 @@ export function stageFromDate(date = new Date()): Stage | null {
 
 export function smartGoalLooksValid(goal: string) {
   const text = goal.trim();
-  if (text.length < 18) return false;
-  const hasTime = /(עד|סוף|תוך|שבוע|חודש|ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)/.test(text);
-  const hasMeasure = /\d|%|אחוז|רוב|כל|לפחות|מספר|פעמים/.test(text);
-  return hasTime && hasMeasure;
+  if (text.length < 10) return false;
+  return text.split(/\s+/).filter(Boolean).length >= 2;
 }
 
 export function planReady(plan: Plan) {
