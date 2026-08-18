@@ -164,18 +164,11 @@ export function analyzeInteraction(state: MatiState): InteractionProfile {
     a.q9.goals, a.q9.implementation, a.q9.teacherChange, a.q9.studentImpact, a.q9.sustainability,
   ];
   const openValues: unknown[] = [
-    state.plan.audience, state.plan.smartGoal, state.plan.metric1, state.plan.metric2, state.plan.timeframe,
-    state.plan.flexibility, state.plan.managers, state.plan.independence, state.plan.nextSmallStep,
-    state.plan.identityFit, state.plan.confidenceNeed,
-    state.formative.context.instructorName, state.formative.context.framework, state.formative.context.period,
-    state.formative.context.menteeCount, state.formative.context.centralGoals,
     a.q1.evidence, a.q2.evidence, a.q3.notes, a.q4.evidence, a.q5.other, a.q5.reflection,
     a.q6.feedback1, a.q6.feedback2, a.q6.feedback3, a.q6.resourcesRequested, a.q6.shortages,
     a.q6.culturePositiveSign, a.q6.cultureStagnationSign, a.q6.teacherRoomTraining, a.q6.aidesTraining,
     a.q7.evidence, a.q8.workedBetter, a.q8.didNotWork, a.q8.success1, a.q8.success2, a.q8.success3,
     a.q8.centralMistake, a.q8.flexibilityReflection, a.q8.next1, a.q8.next2, a.q8.next3,
-    state.formative.post.oneThing, state.formative.post.feeling, state.formative.post.nextCheck,
-    state.summative.achievement, state.summative.achievementMetric, state.summative.turningPoint, state.summative.nextYearChange,
   ];
   const structuredCount = structuredValues.filter(hasValue).length;
   const openCount = openValues.filter(hasValue).length;
