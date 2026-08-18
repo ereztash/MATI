@@ -91,9 +91,8 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   }, []);
 
   const automaticStage = now ? stageFromDate(now) : stageFromDate();
-  const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
+  const activeStage = state.manualStage ?? automaticStage;
   const calendar = now ? calendarContext(now, automaticStage) : null;
-  const action = nextAction(state, activeStage);
   const dims = useMemo(() => scoreDimensions(state), [state]);
   const lowest = [...dims].sort((a, b) => a.score - b.score)[0];
   const strongest = [...dims].sort((a, b) => b.score - a.score)[0];
@@ -104,6 +103,10 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const greeting = calendar ? greetingForDaypart(calendar.daypart) : 'שלום';
 
   const go = (next: View) => { refresh(); setView(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+  if (!activeStage) return <div className="experienceShell view-work">{children}</div>;
+
+  const action = nextAction(state, activeStage);
 
   return (
     <div className={`experienceShell view-${view}`}>
