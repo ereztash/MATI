@@ -2,247 +2,167 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  canOpenStage,
-  emptyState,
-  formativeStarted,
-  MatiState,
-  planReady,
-  scoreDimensions,
-  Stage,
-  stageFromDate,
+  analyzeInteraction, canOpenStage, emptyState, fieldHoursPercent, FormativeAnswers, formativeCompletion, formativeStarted,
+  hasLargeGoalResultGap, implementationStatus, managerMeetingPercent, MatiState, planSaved, recommendedActions,
+  rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, Stage, stageFromDate,
+  studentImprovementPercent, summarizeLongText,
 } from '../lib/stages';
 
-const STORAGE_KEY = 'mati-v1';
+const STORAGE_KEY = 'mati-v2';
+const LEGACY_KEY = 'mati-v1';
+const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
+const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
 
-const fullQuestions = [
-  ['q1', '1. עמידה ביעדים', 'מה מתוך יעדי תוכנית ההדרכה קיבל מענה בפועל? מה אחוז המימוש המשוער ומה הראיות לכך?'],
-  ['q2', '2. שינוי אצל המורה המודרך', 'איזה שינוי ראית בתכנון התאמות, יישום אסטרטגיות או ניהול שונות? על אילו כלים או תוצאות את מבססת את הקביעה?'],
-  ['q3', '3. יישום בפועל', 'כמה מהמפגשים התקיימו? האם היו מטרה, תיעוד ומשימת יישום? מה היה עומק היישום בשטח?'],
-  ['q4', '4. תרומת ההדרכה', 'איזו השפעה נראתה על מסוגלות המורה ועל תפקוד התלמידים? אם אפשר, תני הערכה קרובה במספרים.'],
-  ['q5', '5. בקרה עצמית', 'איפה התאמת את ההדרכה בעקבות צורך או משוב? כמה שעות שטח תכננת וכמה מומשו בפועל?'],
-  ['q6', '6. מערכת: צוות–מנהלים–משאבים–תרבות', 'מה היה המשוב מהצוותים? מה רמת מעורבות המנהלים? אילו משאבים הוקצו, ואיזה שינוי תרבותי נראה?'],
-  ['q7', '7. קיימות ועצמאות', 'באילו תחומים המורה כבר פועל באופן עצמאי? מה ממשיך להתקיים גם ללא תלות גבוהה בך?'],
-  ['q8', '8. רפלקציה מסכמת', 'מה עבד טוב מהצפוי, מה לא עבד ולמה, מה הייתה טעות מרכזית, ומתי היית גמישה או קשיחה מדי?'],
-  ['q9', '9. ציון אפקטיביות', 'תני הערכה 1–10 לעמידה ביעדים, יישום, שינוי אצל המורה, השפעה על תלמידים וקיימות. אפשר גם טווח.'],
-] as const;
-
-const shortIds = new Set(['q1', 'q2', 'q5', 'q8', 'q9']);
-
-function Stars({ score }: { score: number }) {
-  return <span aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>;
+function migrateState(raw: unknown): MatiState {
+  if (!raw || typeof raw !== 'object') return emptyState;
+  const source = raw as Record<string, any>;
+  const legacyAnswers = source.formative?.answers ?? {};
+  const isLegacy = typeof legacyAnswers.q1 === 'string' || typeof legacyAnswers.q2 === 'string';
+  const migratedAnswers = isLegacy ? {
+    ...emptyState.formative.answers,
+    q1: { ...emptyState.formative.answers.q1, evidence: legacyAnswers.q1 ?? '' },
+    q2: { ...emptyState.formative.answers.q2, evidence: legacyAnswers.q2 ?? '' },
+    q3: { ...emptyState.formative.answers.q3, notes: legacyAnswers.q3 ?? '' },
+    q4: { ...emptyState.formative.answers.q4, evidence: legacyAnswers.q4 ?? '' },
+    q5: { ...emptyState.formative.answers.q5, reflection: legacyAnswers.q5 ?? '' },
+    q6: { ...emptyState.formative.answers.q6, culturePositiveSign: legacyAnswers.q6 ?? '' },
+    q7: { ...emptyState.formative.answers.q7, evidence: legacyAnswers.q7 ?? '' },
+    q8: { ...emptyState.formative.answers.q8, didNotWork: legacyAnswers.q8 ?? '' },
+    q9: { ...emptyState.formative.answers.q9 },
+  } : Object.fromEntries(Object.entries(emptyState.formative.answers).map(([key, value]) => [key, { ...(value as Record<string, unknown>), ...(legacyAnswers[key] ?? {}) }])) as FormativeAnswers;
+  return {
+    ...emptyState, ...source,
+    plan: { ...emptyState.plan, ...(source.plan ?? {}) },
+    formative: { ...emptyState.formative, ...(source.formative ?? {}), context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) }, answers: migratedAnswers, post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) } },
+    summative: { ...emptyState.summative, ...(source.summative ?? {}) },
+    history: Array.isArray(source.history) ? source.history : [],
+  };
 }
+
+function Stars({ score }: { score: number }) { return <span className="stars" aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>; }
 
 export default function Home() {
   const [state, setState] = useState<MatiState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
   const [notice, setNotice] = useState('');
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const autoStage = stageFromDate();
   const activeStage = state.manualStage ?? autoStage;
   const dimensions = useMemo(() => scoreDimensions(state), [state]);
+  const profile = useMemo(() => analyzeInteraction(state), [state]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState({ ...emptyState, ...JSON.parse(raw) });
-    } catch {
-      setNotice('לא הצלחתי לקרוא את המידע השמור. אפשר להמשיך מחדש.');
-    } finally {
-      setHydrated(true);
-    }
+    try { const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_KEY); if (raw) setState(migrateState(JSON.parse(raw))); }
+    catch { setNotice('לא הצלחתי לקרוא את המידע השמור. אפשר להתחיל מחדש בלי לאבד את המשך העבודה הנוכחי.'); }
+    finally { setHydrated(true); }
   }, []);
+  useEffect(() => { if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state, hydrated]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state, hydrated]);
-
+  function addHistory(stage: Stage, label: string, note: string) {
+    setState((prev) => ({ ...prev, history: [...prev.history.slice(-11), { at: new Date().toISOString(), stage, label, note }] }));
+  }
   function switchStage(stage: Stage) {
     if (!canOpenStage(stage, state)) {
-      setNotice(stage === 2
-        ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן.'
-        : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת.');
+      setNotice(stage === 2 ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה שמורה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן. בואי נשלים את הבסיס בקצרה.' : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת. גם מענה חלקי מספיק כדי ליצור בסיס.');
       return;
     }
-    setNotice('');
-    setState((prev) => ({ ...prev, manualStage: stage }));
+    setNotice(''); setShowAnalysis(false); setState((prev) => ({ ...prev, manualStage: stage }));
   }
+  function updatePlan(key: keyof MatiState['plan'], value: string) { setState((s) => ({ ...s, plan: { ...s.plan, [key]: value, savedAt: undefined } })); }
+  function updateContext(key: keyof MatiState['formative']['context'], value: string) { setState((s) => ({ ...s, formative: { ...s.formative, context: { ...s.formative.context, [key]: value }, savedAt: undefined } })); }
+  function updateAnswer(section: keyof FormativeAnswers, key: string, value: unknown) { setState((s) => ({ ...s, formative: { ...s.formative, savedAt: undefined, answers: { ...s.formative.answers, [section]: { ...(s.formative.answers[section] as any), [key]: value } } } })); }
+  function updatePost(key: keyof MatiState['formative']['post'], value: string) { setState((s) => ({ ...s, formative: { ...s.formative, post: { ...s.formative.post, [key]: value } } })); }
 
   function savePlan() {
-    if (!planReady(state.plan)) {
-      setNotice('כדי שנוכל לבנות תוכנית שתעבוד בשטח, חסרים קהל יעד, מטרת SMART, שני מדדי הצלחה או מסגרת זמן.');
-      return;
-    }
-    setState((prev) => ({ ...prev, plan: { ...prev.plan, savedAt: new Date().toISOString() } }));
-    setNotice('התוכנית נשמרה במכשיר הזה. עכשיו אפשר לעבור למראה המקצועית או להערכה המעצבת כשיגיע הזמן.');
+    if (!state.plan.audience.trim() || !state.plan.metric1.trim() || !state.plan.metric2.trim() || !state.plan.timeframe.trim()) { setNotice('כדי שנוכל לבנות תוכנית שתעבוד בשטח, חסרים קהל יעד, שני מדדי הצלחה או מסגרת זמן. השלימי רק את החלקים החסרים.'); return; }
+    if (!smartGoalLooksValid(state.plan.smartGoal)) { setNotice('המטרה עדיין לא נראית כמו מטרת SMART מלאה. נסי לכלול מה אמור להשתנות, למי, כמה או באיזו מידה, ועד מתי.'); return; }
+    const stamp = new Date().toISOString();
+    setState((prev) => ({ ...prev, plan: { ...prev.plan, savedAt: stamp }, history: [...prev.history.slice(-11), { at: stamp, stage: 1, label: 'תוכנית עבודה נשמרה', note: prev.plan.smartGoal }] }));
+    setNotice('התוכנית נשמרה. עכשיו אפשר להשתמש במראה כדי לבדוק איפה התכנון כבר חזק ואיפה עוד חסרה ראיה או בעלות ברורה.');
   }
 
-  const visibleQuestions = state.formative.route === 'short'
-    ? fullQuestions.filter(([id]) => shortIds.has(id))
-    : fullQuestions;
+  function saveFormative() {
+    if (!formativeStarted(state.formative)) { setNotice('בחרי לפחות סעיף אחד לענות עליו. גם מענה חלקי הוא בעל ערך ויכול להספיק לעצירה מקצועית ראשונה.'); return; }
+    const stamp = new Date().toISOString(); const note = state.formative.post.oneThing || `מימוש משוער: ${implementationStatus(state) ?? 'לא נמדד'}%`;
+    setState((prev) => ({ ...prev, formative: { ...prev.formative, savedAt: stamp }, history: [...prev.history.slice(-11), { at: stamp, stage: 2, label: 'הערכה מעצבת נשמרה', note }] }));
+    setShowAnalysis(true);
+    setNotice(hasLargeGoalResultGap(state) ? 'אני רואה פער גדול בין המטרות לתוצאות. זו הזדמנות לחשוב אחרת: התמונה המקצועית למטה מסמנת איפה כדאי לשנות מנגנון, לא רק להוסיף מאמץ.' : 'הרפלקציה נשמרה. התמונה המקצועית למטה מבוססת על הנתונים שהזנת — לא על ניחוש.');
+  }
 
-  return (
-    <main className="shell">
-      <header className="hero">
-        <div className="brandRow">
-          <div>
-            <p className="eyebrow">מתי המתי״א</p>
-            <h1>מהתכנון להשפעה שנראית בשטח</h1>
-            <p className="lead">מרחב עבודה רפלקטיבי למדריכות: מנסחות כיוון, בודקות מה באמת השתנה, וסוגרות את השנה עם החלטה טובה יותר לשנה הבאה.</p>
-          </div>
-          <div className="privacy">● נשמר במכשיר זה בלבד</div>
-        </div>
-        <div className="stageStrip">
-          {[1, 2, 3].map((stage) => {
-            const names = ['תכנון', 'הערכה מעצבת', 'הערכה מסכמת'];
-            const locked = !canOpenStage(stage as Stage, state);
-            return (
-              <button
-                key={stage}
-                onClick={() => switchStage(stage as Stage)}
-                className={activeStage === stage ? 'stage active' : 'stage'}
-                aria-disabled={locked}
-              >
-                <span>0{stage}</span>
-                <strong>{names[stage - 1]}</strong>
-                <small>{locked ? 'נפתח אחרי השלמת הבסיס' : activeStage === stage ? 'השלב הפעיל' : 'מעבר ידני'}</small>
-              </button>
-            );
-          })}
-        </div>
-      </header>
+  if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>באיזה שלב בלוח השנה את נמצאת?</h1><p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p><div className="gapOptions"><button onClick={() => switchStage(1)}><b>תכנון</b><span>עד סוף ספטמבר</span></button><button onClick={() => switchStage(2)}><b>הערכה מעצבת</b><span>דצמבר–פברואר</span></button><button onClick={() => switchStage(3)}><b>הערכה מסכמת</b><span>מאי–יוני</span></button></div>{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
 
-      {notice && <div className="notice" role="status">{notice}</div>}
-
-      <section className="workspace">
-        <aside className="sideCard">
-          <span className="kicker">השלב שזוהה</span>
-          <h2>{activeStage === 1 ? 'תכנון' : activeStage === 2 ? 'הערכה מעצבת' : 'הערכה מסכמת'}</h2>
-          <p>{activeStage === autoStage ? 'נקבע אוטומטית לפי לוח השנה.' : 'נבחר ידנית לאחר בדיקת תנאי המעבר.'}</p>
-          <div className="statusList">
-            <div><b>{planReady(state.plan) ? '✓' : '○'}</b> תוכנית עבודה</div>
-            <div><b>{formativeStarted(state.formative) ? '✓' : '○'}</b> רפלקציה מעצבת</div>
-            <div><b>{state.summative.savedAt ? '✓' : '○'}</b> סיכום שנתי</div>
-          </div>
-        </aside>
-
-        <div className="mainCard">
-          {activeStage === 1 && (
-            <>
-              <div className="sectionHead">
-                <div><span className="kicker">שלב 1</span><h2>בונות מצפן עבודה</h2></div>
-                <p>לא לוח קשיח — מספיק מבנה כדי לדעת מה מנסים להזיז ואיך נזהה שזה קרה.</p>
-              </div>
-              <div className="formGrid">
-                <Field label="מי צוותי המוקד / המונחים?" value={state.plan.audience} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, audience: v } }))} placeholder="למשל: 8 מחנכות כיתות א׳–ב׳ בבית ספר יסודי" />
-                <Field label="מטרת SMART אחת" value={state.plan.smartGoal} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, smartGoal: v } }))} placeholder="עד סוף ינואר, 80% מהמורות..." />
-                <Field label="מדד הצלחה 1" value={state.plan.metric1} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, metric1: v } }))} placeholder="מה נוכל לראות או למדוד?" />
-                <Field label="מדד הצלחה 2" value={state.plan.metric2} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, metric2: v } }))} placeholder="אפשר גם מדד איכותני עם ראיה ברורה" />
-                <Field label="מסגרת זמן גסה" value={state.plan.timeframe} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, timeframe: v } }))} placeholder="ספטמבר–ינואר, אחת לשבועיים" />
-                <Field label="איפה נדרשת גמישות?" value={state.plan.flexibility} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, flexibility: v } }))} placeholder="מה עשוי להשתנות בלי לשבור את המטרה?" />
-                <Field label="איזו מעורבות מנהלים נדרשת?" value={state.plan.managers} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, managers: v } }))} placeholder="החלטות, משאבים, זמן, גיבוי" />
-                <Field label="איך תיראה עצמאות של המודרך?" value={state.plan.independence} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, independence: v } }))} placeholder="מה הוא יעשה גם כשאת לא בחדר?" />
-              </div>
-              <div className="actions"><button className="primary" onClick={savePlan}>שמרי תוכנית עבודה</button></div>
-              {planReady(state.plan) && <Mirror dimensions={dimensions} />}
-            </>
-          )}
-
-          {activeStage === 2 && (
-            <>
-              <div className="sectionHead">
-                <div><span className="kicker">שלב 2</span><h2>מה באמת השתנה?</h2></div>
-                <p>גם מענה חלקי הוא בעל ערך. מספיק הערכה קרובה — זה לא מבחן.</p>
-              </div>
-              <div className="routePicker">
-                <button className={state.formative.route === 'short' ? 'choice activeChoice' : 'choice'} onClick={() => setState((s) => ({ ...s, formative: { ...s.formative, route: 'short' } }))}><b>מסלול ממוקד</b><span>5 סעיפים · כ־10 דקות</span></button>
-                <button className={state.formative.route === 'full' ? 'choice activeChoice' : 'choice'} onClick={() => setState((s) => ({ ...s, formative: { ...s.formative, route: 'full' } }))}><b>מסלול מלא</b><span>9 סעיפים · תמונה רחבה</span></button>
-              </div>
-              <div className="questionStack">
-                {visibleQuestions.map(([id, title, prompt]) => (
-                  <label className="question" key={id}>
-                    <span>{title}</span>
-                    <small>{prompt}</small>
-                    <textarea
-                      rows={4}
-                      value={state.formative.answers[id] ?? ''}
-                      onChange={(e) => setState((s) => ({ ...s, formative: { ...s.formative, answers: { ...s.formative.answers, [id]: e.target.value } } }))}
-                      placeholder="כתבי בקצרה. גם תיאור מילולי מספיק."
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="actions">
-                <button className="primary" onClick={() => {
-                  if (!formativeStarted(state.formative)) { setNotice('בחרי לפחות סעיף אחד לענות עליו. גם מענה חלקי מספיק כדי להתחיל.'); return; }
-                  setState((s) => ({ ...s, formative: { ...s.formative, savedAt: new Date().toISOString() } }));
-                  setNotice('הרפלקציה נשמרה. התמונה המקצועית מתעדכנת לפי מה שסיפרת.');
-                }}>שמרי והציגי תמונה</button>
-              </div>
-              {formativeStarted(state.formative) && <Mirror dimensions={dimensions} />}
-            </>
-          )}
-
-          {activeStage === 3 && (
-            <>
-              <div className="sectionHead">
-                <div><span className="kicker">שלב 3</span><h2>סוגרות לולאה, לא רק שנה</h2></div>
-                <p>שלוש תשובות שמתרגמות את השנה להחלטות עבודה לשנה הבאה.</p>
-              </div>
-              <div className="questionStack">
-                <FieldArea label="ההישג המשמעותי ביותר לצוותי המוקד + מדד" value={state.summative.achievement} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, achievement: v } }))} />
-                <FieldArea label="נקודת המפנה האישית שלך" value={state.summative.turningPoint} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, turningPoint: v } }))} />
-                <FieldArea label="השינוי המרכזי שתעשי בשנה הבאה" value={state.summative.nextYearChange} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, nextYearChange: v } }))} />
-              </div>
-              <div className="rubric">
-                <span className="kicker">מחוון לשנה הבאה</span>
-                <div className="rubricGrid">
-                  <div><b>מדדים</b><p>לפחות שני סימנים ברורים להשפעה, לא רק ביצוע פעילות.</p></div>
-                  <div><b>גמישות</b><p>להגדיר מראש מה יכול להשתנות ומה אסור לאבד.</p></div>
-                  <div><b>מנהלים</b><p>לקבוע איפה נדרשת החלטה, משאב או חסות מערכתית.</p></div>
-                  <div><b>תרגום מדיניות</b><p>כל עיקרון מסתיים בפעולה שניתן לראות בשטח.</p></div>
-                </div>
-              </div>
-              <div className="actions"><button className="primary" onClick={() => {
-                if (!state.summative.achievement || !state.summative.turningPoint || !state.summative.nextYearChange) { setNotice('כדי לסגור את השנה, השלימי את שלוש השאלות.'); return; }
-                setState((s) => ({ ...s, summative: { ...s.summative, savedAt: new Date().toISOString() } }));
-                setNotice('הסיכום נשמר. יש לך עכשיו בסיס ברור לפתיחת השנה הבאה.');
-              }}>סגרי את השנה</button></div>
-            </>
-          )}
-        </div>
-      </section>
-
-      <footer>
-        <button className="textButton" onClick={() => {
-          if (confirm('למחוק את כל המידע שנשמר בדפדפן הזה?')) {
-            localStorage.removeItem(STORAGE_KEY);
-            setState(emptyState);
-            setNotice('המידע המקומי נמחק.');
-          }
-        }}>מחיקת המידע המקומי</button>
-        <span>מתי המתי״א · גרסת פיילוט</span>
-      </footer>
-    </main>
-  );
+  const instructor = state.formative.context.instructorName.trim();
+  const previousFormative = [...state.history].reverse().find((h) => h.stage === 2);
+  return <><a className="skipLink" href="#main-workspace">דלגי לתוכן</a><main className="shell">
+    <header className="appHeader">
+      <div className="institutionBar"><div className="institutionBrand" aria-label="מתי״א רג״ב"><span className="brandMark" aria-hidden="true"><i /><i /><i /></span><span><strong>מתי״א רג״ב</strong><small>רמלה · גזר · באר יעקב</small></span></div><div className="privacy"><span aria-hidden="true">🔒</span> המידע נשמר במכשיר הזה בלבד</div></div>
+      <div className="welcomeBlock"><p className="eyebrow">מתי המתי״א</p><h1>{instructor ? `שלום ${instructor}, ` : 'שלום, '}כאן עוצרות כדי לראות מה באמת זז.</h1><p className="lead">את נמצאת בשלב <strong>{stageNames[activeStage]}</strong>. המטרה כאן היא להפוך את העבודה המקצועית לראיות, החלטות וצעדים שאפשר לקחת חזרה לשטח.</p><div className="autosave"><span className="autosaveDot" /> הטיוטה נשמרת אוטומטית</div></div>
+      <nav className="stageStrip" aria-label="שלבי העבודה לאורך השנה">{([1, 2, 3] as Stage[]).map((stage) => { const locked = !canOpenStage(stage, state); const completed = stage === 1 ? planSaved(state) : stage === 2 ? Boolean(state.formative.savedAt) : Boolean(state.summative.savedAt); return <button key={stage} onClick={() => switchStage(stage)} className={`stage ${activeStage === stage ? 'active' : ''} ${completed ? 'completed' : ''}`} aria-disabled={locked} aria-current={activeStage === stage ? 'step' : undefined}><span className="stageNumber" aria-hidden="true">{completed ? '✓' : stage}</span><span className="stageText"><strong>{stageNames[stage]}</strong><small>{locked ? 'ייפתח לאחר השלמת הבסיס' : activeStage === stage ? 'כאן את נמצאת עכשיו' : completed ? 'נשמר' : 'אפשר לעבור'}</small></span>{locked && <span className="lock" aria-hidden="true">🔒</span>}</button>; })}</nav>
+    </header>
+    {notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}
+    <AdaptiveSignal profile={profile} activeStage={activeStage} />
+    <section className="workspace" id="main-workspace"><aside className="sideCard"><span className="kicker">נכון לעכשיו</span><h2>{stageNames[activeStage]}</h2><p>{activeStage === autoStage ? 'זה השלב המתאים לפי לוח השנה.' : 'השלב נבחר ידנית לאחר בדיקת תנאי המעבר.'}</p><div className="statusList" aria-label="התקדמות שנתית"><StatusRow done={planSaved(state)} label="תוכנית עבודה שמורה" /><StatusRow done={Boolean(state.formative.savedAt)} label="הערכה מעצבת" /><StatusRow done={Boolean(state.summative.savedAt)} label="סיכום שנתי" /></div>{activeStage === 2 && <ProgressRing value={formativeCompletion(state)} label="מילוי המסלול" />}<div className="sideHint"><strong>לא צריך לסיים הכול עכשיו.</strong><span>אפשר לעצור ולחזור מאותו מכשיר. גם מידע חלקי יכול לשפר החלטה.</span></div></aside>
+      <div className="mainCard">{activeStage === 1 && <PlanMode state={state} updatePlan={updatePlan} savePlan={savePlan} dimensions={dimensions} setState={setState} />}{activeStage === 2 && <FormativeMode state={state} updateContext={updateContext} updateAnswer={updateAnswer} updatePost={updatePost} setState={setState} saveFormative={saveFormative} dimensions={dimensions} profile={profile} previousFormative={previousFormative?.note} showAnalysis={showAnalysis || Boolean(state.formative.savedAt)} />}{activeStage === 3 && <SummativeMode state={state} setState={setState} addHistory={addHistory} />}</div></section>
+    <footer><span>מתי המתי״א · מתי״א רג״ב · גרסת פיילוט</span><button className="textButton" onClick={() => { if (confirm('למחוק את כל המידע שנשמר בדפדפן הזה?')) { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); setState(emptyState); setNotice('המידע המקומי נמחק.'); } }}>מחיקת המידע המקומי</button></footer>
+  </main></>;
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return <label className="field"><span>{label}</span><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} /></label>;
+function PlanMode({ state, updatePlan, savePlan, dimensions, setState }: { state: MatiState; updatePlan: (key: keyof MatiState['plan'], value: string) => void; savePlan: () => void; dimensions: ReturnType<typeof scoreDimensions>; setState: React.Dispatch<React.SetStateAction<MatiState>>; }) {
+  const goalGood = smartGoalLooksValid(state.plan.smartGoal); const lowest = [...dimensions].sort((a, b) => a.score - b.score)[0];
+  const suggestion = ({ 'מדדים כמותיים': 'לבחור מדד אחד ולנסח מה ייחשב שינוי נראה לעין אצל צוות המוקד.', 'מערכת ואחריות': 'לקבוע שיחה קצרה עם מנהל/ת ולהגדיר החלטה אחת ומשאב אחד שנדרשים להצלחת התהליך.', 'אופרטיביות ועצמאות': 'להגדיר פעולה אחת שהמודרך יבצע לבד ומה תהיה הראיה לעצמאות.', 'לוח זמנים ויישום': 'לסמן נקודת בדיקה אחת בלוח הזמנים שבה משווים תכנון מול ביצוע.', 'רפלקציה ולמידה': 'להגדיר מראש סימן שיגרום לך לשנות את התוכנית במקום להמשיך אוטומטית.' } as Record<string,string>)[lowest.name] ?? 'לבחור פעולה קטנה אחת שאפשר לבדוק בשטח.';
+  return <><div className="sectionHead"><div><span className="kicker">שלב 1 · תכנון</span><h2>בונות תוכנית שאפשר לבדוק בשטח</h2></div><p>הלוח הוא מצפן, לא סרגל. המטרה היא לדעת מה מנסים להזיז, איך נראה שינוי, ואיפה צריך להשאיר גמישות.</p></div>
+    <FormSection number="1" title="למי ומה את רוצה לשנות" tone="blue"><Field label="מי צוותי המוקד / המונחים?" value={state.plan.audience} onChange={(v) => updatePlan('audience', v)} placeholder="למשל: 8 מחנכות כיתות א׳–ב׳ בבית ספר יסודי" /><div className="fieldWithFeedback"><Field label="מטרת SMART אחת" value={state.plan.smartGoal} onChange={(v) => updatePlan('smartGoal', v)} placeholder="עד סוף ינואר, 80% מהמורות..." />{state.plan.smartGoal && <small className={goalGood ? 'fieldOk' : 'fieldHelp'}>{goalGood ? '✓ יש כאן זמן ומדד שניתן לבדוק.' : 'כדאי להוסיף גם מידה/כמות וגם נקודת זמן.'}</small>}</div></FormSection>
+    <FormSection number="2" title="איך נדע שההשפעה באמת קרתה" tone="teal"><Field label="מדד הצלחה 1" value={state.plan.metric1} onChange={(v) => updatePlan('metric1', v)} placeholder="מה נוכל לראות או למדוד?" /><Field label="מדד הצלחה 2" value={state.plan.metric2} onChange={(v) => updatePlan('metric2', v)} placeholder="אפשר גם מדד איכותני עם ראיה ברורה" /></FormSection>
+    <FormSection number="3" title="מה צריך לקרות מסביב כדי שזה יעבוד" tone="gold"><Field label="מסגרת זמן גסה" value={state.plan.timeframe} onChange={(v) => updatePlan('timeframe', v)} placeholder="ספטמבר–ינואר, אחת לשבועיים" /><Field label="איפה נדרשת גמישות?" value={state.plan.flexibility} onChange={(v) => updatePlan('flexibility', v)} placeholder="מה עשוי להשתנות בלי לשבור את המטרה?" /><Field label="איזו מעורבות מנהלים נדרשת?" value={state.plan.managers} onChange={(v) => updatePlan('managers', v)} placeholder="החלטות, משאבים, זמן, גיבוי" /><Field label="איך תיראה עצמאות של המודרך?" value={state.plan.independence} onChange={(v) => updatePlan('independence', v)} placeholder="מה הוא יעשה גם כשאת לא בחדר?" /></FormSection>
+    <div className="actions"><button className="primary" onClick={savePlan}><span>אשרי ושמרי את תוכנית העבודה</span><b aria-hidden="true">←</b></button></div>
+    {planSaved(state) && <Mirror dimensions={dimensions} state={state}><div className="coachingBlock"><span className="coachingLabel">צעד קטן שאפשר לעשות עכשיו</span><p>{state.plan.nextSmallStep || suggestion}</p>{!state.plan.nextSmallStep && <button className="secondary" onClick={() => setState((s) => ({ ...s, plan: { ...s.plan, nextSmallStep: suggestion } }))}>אמצי את הצעד לתוכנית</button>}<div className="socraticGrid"><TextArea label="איך ההצעה מתיישבת עם האני המקצועי שלך?" value={state.plan.identityFit} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, identityFit: v } }))} rows={3} /><TextArea label="מה ייתן לך ביטחון לבצע את הצעד הזה?" value={state.plan.confidenceNeed} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, confidenceNeed: v } }))} rows={3} /></div></div></Mirror>}
+  </>;
 }
 
-function FieldArea({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return <label className="question"><span>{label}</span><textarea rows={5} value={value} onChange={(e) => onChange(e.target.value)} placeholder="כתבי את התשובה שלך כאן" /></label>;
+function FormativeMode({ state, updateContext, updateAnswer, updatePost, setState, saveFormative, dimensions, profile, previousFormative, showAnalysis }: { state: MatiState; updateContext: (key: keyof MatiState['formative']['context'], value: string) => void; updateAnswer: (section: keyof FormativeAnswers, key: string, value: unknown) => void; updatePost: (key: keyof MatiState['formative']['post'], value: string) => void; setState: React.Dispatch<React.SetStateAction<MatiState>>; saveFormative: () => void; dimensions: ReturnType<typeof scoreDimensions>; profile: ReturnType<typeof analyzeInteraction>; previousFormative?: string; showAnalysis: boolean; }) {
+  const a = state.formative.answers; const visible = (id: keyof FormativeAnswers) => state.formative.route === 'full' || shortIds.has(id); const longCandidate = [a.q8.didNotWork, a.q8.centralMistake, a.q6.cultureStagnationSign, a.q5.reflection].sort((x, y) => y.length - x.length)[0] ?? ''; const longSummary = summarizeLongText(longCandidate);
+  return <><div className="sectionHead"><div><span className="kicker">שלב 2 · הערכה מעצבת</span><h2>מה באמת השתנה עד עכשיו?</h2></div><p>יש מסלול מלא ומסלול ממוקד. שניהם תקפים. מספיק אומדן קרוב — זו עצירה מקצועית לחשיבה, לא מבחן.</p></div>
+    <section className="contextPanel"><div className="contextHead"><div><span className="kicker">פרטי ההערכה</span><h3>לפני שמתחילות</h3></div><small>הפרטים האלה מחברים בין הרפלקציה לבין מסגרת העבודה בפועל.</small></div><div className="formGrid compactGrid"><Field label="שם המדריכה" value={state.formative.context.instructorName} onChange={(v) => updateContext('instructorName', v)} /><Field label="מסגרת / בית ספר / גן" value={state.formative.context.framework} onChange={(v) => updateContext('framework', v)} /><Field label="תקופת ההערכה" value={state.formative.context.period} onChange={(v) => updateContext('period', v)} placeholder="למשל: ספטמבר–דצמבר" /><Field label="מספר מורים מודרכים" value={state.formative.context.menteeCount} onChange={(v) => updateContext('menteeCount', v)} inputMode="numeric" /><div className="wide"><TextArea label="מטרות מרכזיות בתוכנית" value={state.formative.context.centralGoals} onChange={(v) => updateContext('centralGoals', v)} rows={3} /></div></div></section>
+    <div className="routeLabel">מה מתאים לך עכשיו?</div><div className="routePicker"><button aria-pressed={state.formative.route === 'short'} className={state.formative.route === 'short' ? 'choice activeChoice' : 'choice'} onClick={() => setState((s) => ({ ...s, formative: { ...s.formative, route: 'short', savedAt: undefined } }))}><span className="choiceDot" /><span><b>מסלול ממוקד</b><small>סעיפים 1, 2, 5, 8, 9 · כ־10 דקות</small></span></button><button aria-pressed={state.formative.route === 'full'} className={state.formative.route === 'full' ? 'choice activeChoice' : 'choice'} onClick={() => setState((s) => ({ ...s, formative: { ...s.formative, route: 'full', savedAt: undefined } }))}><span className="choiceDot" /><span><b>מסלול מלא</b><small>כל 9 הסעיפים · תמונה מערכתית רחבה</small></span></button></div><div className="softMeasure">גם מענה חלקי הוא בעל ערך. כשאין מספר מדויק, בחרי טווח קרוב או תיאור מילולי.</div>
+    <div className="assessmentStack">
+      {visible('q1') && <AssessmentSection number="1" title="עמידה ביעדים" subtitle="מטרות, מדדים ואחוז מימוש"><OptionGroup label="באיזו מידה הושגו יעדי תוכנית ההדרכה?" value={a.q1.goalAchievement} onChange={(v) => updateAnswer('q1', 'goalAchievement', v)} options={[["none","לא הושגו"],["partial","הושגו חלקית"],["mostly","הושגו ברובם"],["full","הושגו במלואם"]]} /><OptionGroup label="כמה מהיעדים קיבלו מענה בפועל?" value={a.q1.goalsAnswered} onChange={(v) => updateAnswer('q1', 'goalsAnswered', v)} options={[["under50","פחות מ־50%"],["50-75","50–75%"],["75-90","75–90%"],["100","100%"]]} /><OptionGroup label="האם הוגדרו מדדי הצלחה ברורים לכל יעד?" value={a.q1.measuresDefined} onChange={(v) => updateAnswer('q1', 'measuresDefined', v)} options={[["all","כן, לכל היעדים"],["some","לחלקם"],["no","לא"]]} /><div className="twoCols"><Field label="אחוז המימוש בפועל מתוך היעד" value={a.q1.implementationPercent} onChange={(v) => updateAnswer('q1', 'implementationPercent', v)} suffix="%" inputMode="numeric" /><TextArea label="על איזו ראיה את מבססת את ההערכה?" value={a.q1.evidence} onChange={(v) => updateAnswer('q1', 'evidence', v)} rows={3} /></div></AssessmentSection>}
+      {visible('q2') && <AssessmentSection number="2" title="שינוי בהתנהלות המורה המודרך" subtitle="לפני / אחרי, כולל הראיה לשינוי"><Scale label="תכנון התאמות לתלמידים עם צרכים מיוחדים" value={a.q2.planAdjustments} max={5} onChange={(v) => updateAnswer('q2', 'planAdjustments', v)} /><Scale label="יישום אסטרטגיות הוראה מותאמות" value={a.q2.strategies} max={5} onChange={(v) => updateAnswer('q2', 'strategies', v)} /><Scale label="ניהול כיתה/גן עם שונות גבוהה" value={a.q2.heterogeneity} max={5} onChange={(v) => updateAnswer('q2', 'heterogeneity', v)} /><OptionGroup label="באיזו תדירות המורה יישם כלים שנלמדו?" value={a.q2.frequency} onChange={(v) => updateAnswer('q2', 'frequency', v)} options={[["rarely","לעיתים רחוקות"],["sometimes","לעיתים"],["regular","באופן קבוע"],["independent","באופן עצמאי ועקבי"]]} /><TextArea label="על אילו כלים, תוצרים או תצפיות את קובעת שאכן חל שינוי?" value={a.q2.evidence} onChange={(v) => updateAnswer('q2', 'evidence', v)} rows={4} /></AssessmentSection>}
+      {visible('q3') && <AssessmentSection number="3" title="יישום בפועל של ההדרכה" subtitle="תדירות, מבנה, תצפיות ועומק היישום"><OptionGroup label="באיזו תדירות התקיימו מפגשי ההדרכה כמתוכנן?" value={a.q3.meetingRate} onChange={(v) => updateAnswer('q3', 'meetingRate', v)} options={[["under70","פחות מ־70%"],["70-90","70–90%"],["90-100","90–100%"]]} /><OptionGroup label="באיזו עקביות היו במפגש מטרה, תיעוד ומשימת יישום?" value={a.q3.meetingStructure} onChange={(v) => updateAnswer('q3', 'meetingStructure', v)} options={[["always","תמיד"],["mostly","לרוב"],["sometimes","לעיתים"],["never","כלל לא"]]} /><OptionGroup label="כמה תצפיות / משובים מעשיים ניתנו?" value={a.q3.observations} onChange={(v) => updateAnswer('q3', 'observations', v)} options={[["0","0"],["1-2","1–2"],["3-5","3–5"],["over5","יותר מ־5"]]} /><OptionGroup label="עומק היישום בשטח" value={a.q3.depth} onChange={(v) => updateAnswer('q3', 'depth', v)} options={[["consistent","עקבי ומשמעותי"],["shallow","ברובו שטחי"],["partial","חלקי בלבד"]]} /><TextArea label="הערה קצרה על חסם או תנאי שהשפיע על היישום" value={a.q3.notes} onChange={(v) => updateAnswer('q3', 'notes', v)} rows={3} /></AssessmentSection>}
+      {visible('q4') && <AssessmentSection number="4" title="מדידת תרומת ההדרכה" subtitle="מסוגלות המורה, תלמידים ואירועי קושי"><Scale label="תרומת ההדרכה לתחושת המסוגלות המקצועית של המורה" value={a.q4.efficacy} max={5} onChange={(v) => updateAnswer('q4', 'efficacy', v)} /><OptionGroup label="השפעה על תפקוד התלמידים — ויסות, השתתפות, עצמאות" value={a.q4.studentImpact} onChange={(v) => updateAnswer('q4', 'studentImpact', v)} options={[["none","לא"],["low","מועטה"],["medium","בינונית"],["high","משמעותית"]]} /><OptionGroup label="ירידה באירועי קושי / משמעת / חוסר תפקוד" value={a.q4.incidentReduction} onChange={(v) => updateAnswer('q4', 'incidentReduction', v)} options={[["none","לא"],["slight","ירידה קלה"],["significant","ירידה משמעותית"],["notMeasured","לא נמדד"]]} /><div className="twoCols"><Field label="כמה תלמידים הוגדרו ליעד שיפור?" value={a.q4.targetStudents} onChange={(v) => updateAnswer('q4', 'targetStudents', v)} inputMode="numeric" /><Field label="כמה בפועל השתפרו?" value={a.q4.improvedStudents} onChange={(v) => updateAnswer('q4', 'improvedStudents', v)} inputMode="numeric" /></div>{studentImprovementPercent(state) !== null && <MetricHint>שיפור בקרב צוות המוקד שנמדד: <strong>{studentImprovementPercent(state)}%</strong></MetricHint>}<TextArea label="איזו ראיה עזרה לך לקבוע שהשינוי קשור להדרכה?" value={a.q4.evidence} onChange={(v) => updateAnswer('q4', 'evidence', v)} rows={3} /></AssessmentSection>}
+      {visible('q5') && <AssessmentSection number="5" title="בקרה עצמית של המדריכה" subtitle="התאמות, כלי הערכה ואחוז מימוש שעות שטח"><Scale label="עד כמה התאמת את ההדרכה לצרכים האישיים של המורה?" value={a.q5.tailoring} max={5} onChange={(v) => updateAnswer('q5', 'tailoring', v)} /><OptionGroup label="האם השתמשת בכלי הערכה עקביים לאורך התהליך?" value={a.q5.assessmentTools} onChange={(v) => updateAnswer('q5', 'assessmentTools', v)} options={[["yes","כן"],["partial","חלקית"],["no","לא"]]} /><OptionGroup label="כמה התאמות בוצעו בתוכנית בעקבות משוב או צורך?" value={a.q5.adaptations} onChange={(v) => updateAnswer('q5', 'adaptations', v)} options={[["0","0"],["1-2","1–2"],["3-4","3–4"],["over4","יותר מ־4"]]} /><TextArea label="אחר / התאמה משמעותית שחשוב לתעד" value={a.q5.other} onChange={(v) => updateAnswer('q5', 'other', v)} rows={3} /><div className="twoCols"><Field label="שעות שטח שתכננתי לשבוע" value={a.q5.plannedHours} onChange={(v) => updateAnswer('q5', 'plannedHours', v)} inputMode="decimal" /><Field label="שעות שטח בפועל" value={a.q5.actualHours} onChange={(v) => updateAnswer('q5', 'actualHours', v)} inputMode="decimal" /></div>{fieldHoursPercent(state) !== null && <MetricHint>אחוז מימוש שעות שטח: <strong>{fieldHoursPercent(state)}%</strong></MetricHint>}<TextArea label="מה למדת מהפער בין התכנון לביצוע?" value={a.q5.reflection} onChange={(v) => updateAnswer('q5', 'reflection', v)} rows={4} /></AssessmentSection>}
+      {visible('q6') && <AssessmentSection number="6" title="מדדי מערכת: צוות–מנהלים–משאבים–תרבות" subtitle="התנאים המערכתיים שמקדמים או עוצרים את ההשפעה"><OptionGroup label="האם ביקשת משוב שיטתי מהצוותים?" value={a.q6.teamFeedbackAsked} onChange={(v) => updateAnswer('q6', 'teamFeedbackAsked', v)} options={[["yes","כן"],["no","לא"]]} /><div className="threeCols"><Field label="הערה חוזרת 1" value={a.q6.feedback1} onChange={(v) => updateAnswer('q6', 'feedback1', v)} /><Field label="הערה חוזרת 2" value={a.q6.feedback2} onChange={(v) => updateAnswer('q6', 'feedback2', v)} /><Field label="הערה חוזרת 3" value={a.q6.feedback3} onChange={(v) => updateAnswer('q6', 'feedback3', v)} /></div><OptionGroup label="הטון הכללי של המשוב" value={a.q6.feedbackTone} onChange={(v) => updateAnswer('q6', 'feedbackTone', v)} options={[["positive","חיובי"],["mixed","מעורב"],["negative","שלילי"]]} /><div className="twoCols"><Field label="פגישות מנהלים שתוכננו" value={a.q6.managerPlanned} onChange={(v) => updateAnswer('q6', 'managerPlanned', v)} inputMode="numeric" /><Field label="פגישות מנהלים שהתקיימו" value={a.q6.managerActual} onChange={(v) => updateAnswer('q6', 'managerActual', v)} inputMode="numeric" /></div>{managerMeetingPercent(state) !== null && <MetricHint>מימוש פגישות מנהלים: <strong>{managerMeetingPercent(state)}%</strong></MetricHint>}<OptionGroup label="רמת מחויבות מנהלים" value={a.q6.managerCommitment} onChange={(v) => updateAnswer('q6', 'managerCommitment', v)} options={[["high","גבוהה"],["medium","בינונית"],["low","נמוכה"],["resistance","התנגדות"]]} /><OptionGroup label="האם הוקצו משאבים?" value={a.q6.resourcesAllocated} onChange={(v) => updateAnswer('q6', 'resourcesAllocated', v)} options={[["yes","כן"],["partial","חלקית"],["no","לא"]]} /><div className="twoCols"><Field label="משאבים שביקשתי" value={a.q6.resourcesRequested} onChange={(v) => updateAnswer('q6', 'resourcesRequested', v)} /><Field label="אחוז משאבים שהוקצו בפועל" value={a.q6.resourcesPercent} onChange={(v) => updateAnswer('q6', 'resourcesPercent', v)} suffix="%" inputMode="numeric" /></div><TextArea label="החוסרים המרכזיים" value={a.q6.shortages} onChange={(v) => updateAnswer('q6', 'shortages', v)} rows={3} /><OptionGroup label="האם ניכרת שפה מקצועית חדשה בשטח?" value={a.q6.newProfessionalLanguage} onChange={(v) => updateAnswer('q6', 'newProfessionalLanguage', v)} options={[["yes","כן"],["partial","חלקית"],["no","לא"]]} /><div className="twoCols"><TextArea label="סימן אחד לשינוי חיובי בתרבות" value={a.q6.culturePositiveSign} onChange={(v) => updateAnswer('q6', 'culturePositiveSign', v)} rows={3} /><TextArea label="סימן אחד לקיפאון / נסיגה" value={a.q6.cultureStagnationSign} onChange={(v) => updateAnswer('q6', 'cultureStagnationSign', v)} rows={3} /></div><div className="twoCols"><Field label="הדרכה לחדר מורים — כמה פעמים?" value={a.q6.teacherRoomTraining} onChange={(v) => updateAnswer('q6', 'teacherRoomTraining', v)} /><Field label="הדרכה לסייעות — פורמט וכמה פעמים?" value={a.q6.aidesTraining} onChange={(v) => updateAnswer('q6', 'aidesTraining', v)} /></div></AssessmentSection>}
+      {visible('q7') && <AssessmentSection number="7" title="מדדים לסיום התהליך" subtitle="עצמאות, המשכיות והמלצות מבוססות נתונים"><OptionGroup label="האם המורה מסוגל לפעול באופן עצמאי בתחומים שנלמדו?" value={a.q7.independence} onChange={(v) => updateAnswer('q7', 'independence', v)} options={[["none","לא"],["partial","חלקית"],["most","ברוב התחומים"],["all","בכל התחומים"]]} /><OptionGroup label="האם הוגדרו המלצות המשך מבוססות נתונים?" value={a.q7.dataBasedRecommendations} onChange={(v) => updateAnswer('q7', 'dataBasedRecommendations', v)} options={[["yes","כן"],["no","לא"]]} /><OptionGroup label="האם הצוותים ממשיכים ליישם ללא תלות גבוהה במדריכה?" value={a.q7.continuesWithoutDependency} onChange={(v) => updateAnswer('q7', 'continuesWithoutDependency', v)} options={[["yes","כן"],["partial","חלקית"],["no","לא"]]} /><TextArea label="איזו ראיה מראה שהבעלות באמת עברה למודרך / לצוות?" value={a.q7.evidence} onChange={(v) => updateAnswer('q7', 'evidence', v)} rows={3} /></AssessmentSection>}
+      {visible('q8') && <AssessmentSection number="8" title="רפלקציה מסכמת של המדריכה" subtitle="מה עבד, מה לא, מה למדת ומה תעשי אחרת"><div className="twoCols"><TextArea label="מה עבד טוב מהצפוי?" value={a.q8.workedBetter} onChange={(v) => updateAnswer('q8', 'workedBetter', v)} rows={4} /><TextArea label="מה לא עבד ולמה?" value={a.q8.didNotWork} onChange={(v) => updateAnswer('q8', 'didNotWork', v)} rows={4} /></div><div className="threeCols"><Field label="הצלחה 1" value={a.q8.success1} onChange={(v) => updateAnswer('q8', 'success1', v)} /><Field label="הצלחה 2" value={a.q8.success2} onChange={(v) => updateAnswer('q8', 'success2', v)} /><Field label="הצלחה 3" value={a.q8.success3} onChange={(v) => updateAnswer('q8', 'success3', v)} /></div><TextArea label="מה הייתה טעות מרכזית ומה למדת ממנה?" value={a.q8.centralMistake} onChange={(v) => updateAnswer('q8', 'centralMistake', v)} rows={4} /><TextArea label="מתי היית גמישה ומתי קשיחה מדי?" value={a.q8.flexibilityReflection} onChange={(v) => updateAnswer('q8', 'flexibilityReflection', v)} rows={4} /><div className="threeCols"><Field label="צעד הבא 1" value={a.q8.next1} onChange={(v) => updateAnswer('q8', 'next1', v)} /><Field label="צעד הבא 2" value={a.q8.next2} onChange={(v) => updateAnswer('q8', 'next2', v)} /><Field label="צעד הבא 3" value={a.q8.next3} onChange={(v) => updateAnswer('q8', 'next3', v)} /></div></AssessmentSection>}
+      {visible('q9') && <AssessmentSection number="9" title="ציון אפקטיביות משוקלל לעצמי" subtitle="1–10 לכל תחום; הממוצע מחושב אוטומטית"><Scale label="עמידה ביעדים" value={a.q9.goals} max={10} onChange={(v) => updateAnswer('q9', 'goals', v)} /><Scale label="יישום בפועל" value={a.q9.implementation} max={10} onChange={(v) => updateAnswer('q9', 'implementation', v)} /><Scale label="שינוי אצל מורה מודרך" value={a.q9.teacherChange} max={10} onChange={(v) => updateAnswer('q9', 'teacherChange', v)} /><Scale label="השפעה על תלמידים" value={a.q9.studentImpact} max={10} onChange={(v) => updateAnswer('q9', 'studentImpact', v)} /><Scale label="קיימות והמשכיות" value={a.q9.sustainability} max={10} onChange={(v) => updateAnswer('q9', 'sustainability', v)} />{selfEffectivenessAverage(state) !== null && <EffectivenessAverage value={selfEffectivenessAverage(state)!} />}</AssessmentSection>}
+    </div>
+    {longSummary && <div className="summaryConfirm"><span className="kicker">בדיקת הבנה</span><p><strong>הבנתי ש...</strong> {longSummary}</p><small>זה תמצות מכני של מה שכתבת כדי לא לאבד את העיקר; אם הוא לא מייצג אותך, השאירי את הטקסט המקורי כסמכות.</small></div>}
+    <div className="postReflection"><div className="sectionHead compact"><div><span className="kicker">סגירת הלולאה</span><h3>לפני ששומרות</h3></div><p>שלוש שאלות קצרות שמתרגמות את הרפלקציה להמשך.</p></div>{previousFormative && <div className="historyLoop"><b>בפעם הקודמת נשמר:</b><span>{previousFormative}</span><small>איך זה נראה עכשיו?</small></div>}<div className="threeCols"><TextArea label="מה הדבר האחד שתיקחי הלאה?" value={state.formative.post.oneThing} onChange={(v) => updatePost('oneThing', v)} rows={3} /><TextArea label="איך ההרגשה אחרי העצירה הזו?" value={state.formative.post.feeling} onChange={(v) => updatePost('feeling', v)} rows={3} /><TextArea label="מה תרצי לבדוק בפעם הבאה?" value={state.formative.post.nextCheck} onChange={(v) => updatePost('nextCheck', v)} rows={3} /></div></div>
+    <div className="actions"><button className="primary" onClick={saveFormative}><span>שמרי והציגי תמונה מקצועית</span><b aria-hidden="true">←</b></button></div>{showAnalysis && <FormativeAnalysis state={state} dimensions={dimensions} profile={profile} />}
+  </>;
 }
 
-function Mirror({ dimensions }: { dimensions: ReturnType<typeof scoreDimensions> }) {
-  const lowest = [...dimensions].sort((a, b) => a.score - b.score)[0];
-  return (
-    <section className="mirror">
-      <div className="sectionHead compact"><div><span className="kicker">המראה המקצועית</span><h3>איפה כדאי להעמיק עכשיו</h3></div></div>
-      <div className="dimensionGrid">
-        {dimensions.map((item) => <div className="dimension" key={item.name}><div><b>{item.name}</b><Stars score={item.score} /></div><p>{item.note}</p></div>)}
-      </div>
-      <div className="opportunity"><b>הזדמנות מרכזית: {lowest.name}</b><p>זה לא ציון אישיותי. זה המקום שבו יש כרגע הכי מעט ראיות כתובות. הוספת ראיה אחת קונקרטית יכולה להפוך את ההשפעה שלך לברורה יותר.</p><p className="beforeAfter"><strong>לפני:</strong> “דיברנו על התאמות.” <strong>אחרי:</strong> “בשלושה מתוך ארבעה שיעורים המורה בחרה התאמה בעצמה והסבירה למה.”</p></div>
-    </section>
-  );
+function FormativeAnalysis({ state, dimensions, profile }: { state: MatiState; dimensions: ReturnType<typeof scoreDimensions>; profile: ReturnType<typeof analyzeInteraction> }) {
+  const sorted = [...dimensions].sort((a, b) => b.score - a.score); const lighthouse = sorted[0]; const lowest = sorted[sorted.length - 1]; const actions = recommendedActions(state); const impl = implementationStatus(state); const studentPct = studentImprovementPercent(state); const fieldPct = fieldHoursPercent(state); const managerPct = managerMeetingPercent(state); const evidenceStrengths = sorted.filter((d) => d.score >= 4 && d.evidence.length).slice(0, 2);
+  const styleText = profile.style === 'analytic' ? 'המענה שלך כרגע נשען יחסית על מספרים, יעדים והבחנות. לכן אני מציג קודם את המדדים והפערים.' : profile.style === 'intuitive' ? 'המענה שלך כרגע נשען יחסית על תיאורים ודוגמאות. לכן חשוב לשמור את הסיפור, ובמקביל לחלץ ממנו ראיה אחת שאפשר לבדוק.' : 'המענה שלך כרגע משלב תיאור מקצועי עם נתונים. זה מאפשר לחבר בין מה שהרגשת שקרה לבין מה שאפשר לראות בשטח.';
+  return <section className="analysisPanel"><div className="sectionHead compact"><div><span className="kicker">התמונה המקצועית</span><h3>ממצא → הכרעה → פעולה</h3></div><p>כל המסקנות כאן נשענות על מה שהזנת. כשאין נתון, המערכת מציינת שאין נתון ולא משלימה אותו.</p></div><div className="metricRow"><MetricCard label="מימוש היעדים" value={impl !== null ? `${impl}%` : 'לא נמדד'} /><MetricCard label="שיפור תלמידי מוקד" value={studentPct !== null ? `${studentPct}%` : 'לא נמדד'} /><MetricCard label="מימוש שעות שטח" value={fieldPct !== null ? `${fieldPct}%` : 'לא נמדד'} /><MetricCard label="פגישות מנהלים" value={managerPct !== null ? `${managerPct}%` : 'לא נמדד'} /></div><div className="lighthouse"><span aria-hidden="true">✦</span><div><b>המגדלור החיובי: {lighthouse.name}</b><p>{lighthouse.evidence[0] || 'זהו כרגע הממד החזק יחסית, אך עדיין כדאי להוסיף ראיה קונקרטית.'}</p></div></div>{evidenceStrengths.length > 0 && <div className="strengths"><h4>חוזקות שעולות מהנתונים</h4>{evidenceStrengths.map((d) => <div key={d.name}><b>{d.name}</b><span>{d.evidence.slice(0, 2).join(' · ')}</span></div>)}</div>}{profile.style === 'intuitive' ? <div className="dimensionNarrative">{dimensions.map((d) => <p key={d.name}><strong>{d.name} — {d.score}/5:</strong> {d.evidence.length ? d.evidence.join('; ') : 'עדיין חסרה ראיה מספקת.'}</p>)}</div> : <DimensionGrid dimensions={dimensions} />}<div className="systemAnalysis"><h4>איך סגנון העבודה והמערכת נפגשים</h4><p>{styleText}</p><p>{state.formative.answers.q6.managerCommitment === 'low' || state.formative.answers.q6.managerCommitment === 'resistance' ? 'במקביל, יש כרגע סימן לחסם מערכתי במעורבות הנהלה. לא נכון לייחס את כל הפער לביצוע של המדריכה.' : 'לא זוהה כרגע חסם הנהלה חריף מתוך הנתונים שנמסרו; אם קיים חסם כזה ולא תועד, כדאי להוסיף אותו.'}</p></div><div className="opportunity"><span className="opportunityLabel">ההזדמנות הקריטית כרגע</span><b>{lowest.name}</b><p>{lowest.evidence.length ? `יש ראיות, אבל זה עדיין הממד החלש יחסית: ${lowest.evidence.join(' · ')}` : 'כאן כמעט לא נאספו ראיות. לפני שמוסיפים פעילות, כדאי לבדוק איזה נתון או בעלות חסרים.'}</p><p className="whyItMatters"><strong>למה זה משנה:</strong> אם הממד הזה נשאר חלש, קשה לדעת האם הפעילות עצמה יצרה שינוי שנשאר בשטח.</p></div><div className="recommendations"><h4>שלושה צעדים קונקרטיים להמשך</h4>{actions.map((action, i) => <div key={action}><span>{i + 1}</span><p>{action}</p></div>)}</div></section>;
 }
+
+function SummativeMode({ state, setState, addHistory }: { state: MatiState; setState: React.Dispatch<React.SetStateAction<MatiState>>; addHistory: (stage: Stage, label: string, note: string) => void }) {
+  const rubric = rubricForNextYear(state); const dims = [...scoreDimensions(state)].sort((a, b) => a.score - b.score); const recipe = [`מיקוד: לבחור צוותי מוקד ולתת קדימות ל־${rubric.focus.join(' ו־') || 'הממד החלש ביותר'}.`, 'מדידה: להגדיר מראש לפחות שני סימנים להשפעה, לא רק לכך שהדרכה התקיימה.', 'בעלות: לקבוע מה עובר למודרך, לצוות ולמנהל כדי שהיישום לא יישאר תלוי במדריכה.', 'למידה: לקבוע נקודת בדיקה שבה משווים תכנון, תוצאה וחסם ומעדכנים את התוכנית.'];
+  return <><div className="sectionHead"><div><span className="kicker">שלב 3 · הערכה מסכמת</span><h2>סוגרות לולאה, לא רק שנה</h2></div><p>שלוש תשובות שמתרגמות את השנה להחלטות עבודה ברורות לפתיחת השנה הבאה.</p></div><div className="questionStack summativeStack"><TextArea label="1. ההישג המשמעותי ביותר לצוותי המוקד" value={state.summative.achievement} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, achievement: v, savedAt: undefined } }))} rows={4} /><Field label="המדד שמראה שההישג קרה" value={state.summative.achievementMetric} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, achievementMetric: v, savedAt: undefined } }))} placeholder="מספר, אחוז, תצפית חוזרת או ראיה אחרת" /><TextArea label="2. נקודת המפנה האישית שלך" value={state.summative.turningPoint} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, turningPoint: v, savedAt: undefined } }))} rows={4} /><TextArea label="3. השינוי המרכזי שתעשי בשנה הבאה" value={state.summative.nextYearChange} onChange={(v) => setState((s) => ({ ...s, summative: { ...s.summative, nextYearChange: v, savedAt: undefined } }))} rows={4} /></div><section className="rubric"><div className="rubricHead"><span className="rubricIcon" aria-hidden="true">✓</span><span><b>מחוון מותאם לפתיחת השנה הבאה</b><small>נבנה מהנתונים שנאספו השנה</small></span></div><div className="rubricGrid"><div><b>מדדים</b><p>לפחות שני סימנים ברורים להשפעה, כולל מדד לצוותי מוקד.</p></div><div><b>גמישות</b><p>להגדיר מראש מה יכול להשתנות ומה אסור לאבד.</p></div><div><b>מעורבות מנהלים</b><p>לקבוע איפה נדרשת החלטה, משאב או חסות מערכתית.</p></div><div><b>תרגום מדיניות לעשייה</b><p>כל עיקרון מסתיים בפעולה שניתן לראות בשטח.</p></div></div><div className="rubricDynamic"><div><h4>טעויות / פערים שכדאי לא לחזור עליהם</h4><ul>{rubric.mistakes.map((m) => <li key={m}>{m}</li>)}</ul></div><div><h4>שאלות מפתח לפתיחת השנה</h4><ul>{rubric.questions.map((q) => <li key={q}>{q}</li>)}</ul></div></div><div className="recipe"><h4>מתכון תמציתי להצלחה</h4>{recipe.map((r, i) => <p key={r}><span>{i + 1}</span>{r}</p>)}</div><div className="yearFocus"><strong>שני מוקדי הלמידה שעולים מהשנה:</strong><span>{dims.slice(0, 2).map((d) => d.name).join(' · ')}</span></div></section><div className="actions"><button className="primary" onClick={() => { if (!state.summative.achievement.trim() || !state.summative.achievementMetric.trim() || !state.summative.turningPoint.trim() || !state.summative.nextYearChange.trim()) { alert('כדי לסגור את השנה, השלימי את שלוש השאלות ואת המדד להישג המרכזי.'); return; } const stamp = new Date().toISOString(); setState((s) => ({ ...s, summative: { ...s.summative, savedAt: stamp } })); addHistory(3, 'הערכה מסכמת נשמרה', state.summative.nextYearChange); }}><span>סגרי את השנה ושמרי</span><b aria-hidden="true">✓</b></button></div>{state.summative.savedAt && <div className="closingSummary"><span aria-hidden="true">✓</span><div><b>הלולאה נסגרה.</b><p>יש עכשיו עקבה שמחברת בין ההישג, נקודת המפנה והשינוי שתיקחי לשנה הבאה. האחריות אינה רק על מה שתעשי — אלא על מה יישאר בשטח גם בלעדייך.</p></div></div>}</>;
+}
+
+function AdaptiveSignal({ profile, activeStage }: { profile: ReturnType<typeof analyzeInteraction>; activeStage: Stage }) { if (profile.responseCount < 2) return null; if (profile.minimalism) return <div className="adaptiveSignal soft">אני מרגיש שאת לא פנויה להרחיב. אפשר לעבוד כרגע באופן ממוקד יותר — {activeStage === 2 ? 'המסלול המקוצר כבר מסומן עבורך כאפשרות.' : 'עני רק על השדות שמקדמים את הצעד הבא.'}</div>; if (profile.overload) return <div className="adaptiveSignal soft">עולה מהתשובות עומס משמעותי. נפריד בין מה שבשליטתך לבין חסמי מערכת, כדי שהרפלקציה לא תהפוך לעוד משימה.</div>; if (profile.pace === 'compact') return <div className="adaptiveSignal">התשובות שלך כרגע קצרות וענייניות. אשמור על תצוגה תמציתית ואעדיף בחירות סגורות כשאפשר.</div>; return null; }
+function StatusRow({ done, label }: { done: boolean; label: string }) { return <div className={done ? 'statusDone' : ''}><b aria-hidden="true">{done ? '✓' : '○'}</b><span>{label}</span></div>; }
+function ProgressRing({ value, label }: { value: number; label: string }) { return <div className="progressBox"><div className="progressValue">{value}%</div><div><b>{label}</b><span>אחוז מילוי משוער של המסלול שנבחר</span></div></div>; }
+function FormSection({ number, title, tone, children }: { number: string; title: string; tone: 'blue' | 'teal' | 'gold'; children: React.ReactNode }) { return <section className={`formSection ${tone}`}><div className="formSectionHead"><span>{number}</span><h3>{title}</h3></div><div className="formGrid">{children}</div></section>; }
+function AssessmentSection({ number, title, subtitle, children }: { number: string; title: string; subtitle: string; children: React.ReactNode }) { return <section className="assessmentSection"><div className="assessmentHead"><span>{number}</span><div><h3>{title}</h3><p>{subtitle}</p></div></div><div className="assessmentBody">{children}</div></section>; }
+function Field({ label, value, onChange, placeholder, suffix, inputMode }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; suffix?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'] }) { return <label className="field"><span>{label}</span><div className="inputWrap"><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} inputMode={inputMode} />{suffix && <b>{suffix}</b>}</div></label>; }
+function TextArea({ label, value, onChange, rows = 4 }: { label: string; value: string; onChange: (v: string) => void; rows?: number }) { return <label className="field textField"><span>{label}</span><textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder="כתבי כאן. אפשר גם בקצרה." /></label>; }
+function OptionGroup({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) { return <fieldset className="optionGroup"><legend>{label}</legend><div>{options.map(([key, text]) => <button type="button" key={key} aria-pressed={value === key} onClick={() => onChange(key)}>{text}</button>)}</div></fieldset>; }
+function Scale({ label, value, max, onChange }: { label: string; value: number | null; max: 5 | 10; onChange: (value: number) => void }) { return <fieldset className="scale"><legend>{label}</legend><div className={max === 10 ? 'tenScale' : ''}>{Array.from({ length: max }, (_, i) => i + 1).map((n) => <button type="button" key={n} aria-pressed={value === n} onClick={() => onChange(n)}>{n}</button>)}</div><small>{max === 5 ? '1 = ללא שינוי · 5 = שיפור משמעותי' : '1 = נמוך מאוד · 10 = גבוה מאוד'}</small></fieldset>; }
+function MetricHint({ children }: { children: React.ReactNode }) { return <div className="metricHint">{children}<small>זה חישוב מתוך המספרים שהזנת, לא הערכה של המערכת.</small></div>; }
+function EffectivenessAverage({ value }: { value: number }) { const label = value >= 8.5 ? 'מצוין' : value >= 7 ? 'טוב מאוד' : value >= 5.5 ? 'בינוני — דורש חיזוק' : 'נדרש שינוי תוכנית'; return <div className="effectivenessAverage"><span>ממוצע כולל</span><strong>{value}/10</strong><b>{label}</b></div>; }
+function MetricCard({ label, value }: { label: string; value: string }) { return <div className="metricCard"><span>{label}</span><strong>{value}</strong></div>; }
+function DimensionGrid({ dimensions }: { dimensions: ReturnType<typeof scoreDimensions> }) { return <div className="dimensionGrid">{dimensions.map((item) => <div className="dimension" key={item.name}><div><b>{item.name}</b><Stars score={item.score} /></div><p>{item.note}</p><small>{item.evidence.length ? item.evidence.slice(0, 2).join(' · ') : 'עדיין חסרה ראיה קונקרטית.'}</small></div>)}</div>; }
+function Mirror({ dimensions, state, children }: { dimensions: ReturnType<typeof scoreDimensions>; state: MatiState; children?: React.ReactNode }) { const sorted = [...dimensions].sort((a, b) => a.score - b.score); const lowest = sorted[0]; const strongest = sorted[sorted.length - 1]; const questions: Record<string, string> = { 'רפלקציה ולמידה': 'איזה סימן בשטח יגרום לך לשנות כיוון במקום להמשיך לפי התוכנית המקורית?', 'מדדים כמותיים': 'איזו ראיה אחת תאפשר למישהו שלא היה בתהליך לראות שהתרחש שינוי?', 'לוח זמנים ויישום': 'איפה צפוי הפער הגדול ביותר בין מה שתכננת לבין מה שאפשר באמת לבצע?', 'מערכת ואחריות': 'איזו החלטה נמצאת אצל מנהל/ת או צוות, ולא נכון שתישאר בבעלותך?', 'אופרטיביות ועצמאות': 'מה המודרך יעשה בעצמו כדי שתדעי שההדרכה לא יצרה תלות?' }; return <section className="mirror"><div className="sectionHead compact"><div><span className="kicker">המראה המקצועית</span><h3>מה התכנון כבר מחזיק — ומה עדיין צריך לחזק</h3></div><p>הדירוג מתייחס לראיות שנמצאות בתוכנית, לא לאישיות ולא לערך המקצועי שלך.</p></div><div className="strengthBanner"><span aria-hidden="true">✦</span><div><b>חוזקה שנראית כרגע: {strongest.name}</b><p>{strongest.evidence[0] || 'זה הממד החזק יחסית בתמונה הנוכחית.'}</p></div></div><DimensionGrid dimensions={dimensions} /><div className="opportunity"><span className="opportunityLabel">ההזדמנות הקריטית</span><b>{lowest.name}</b><p>{questions[lowest.name]}</p><p className="whyItMatters"><strong>למה זה משנה:</strong> תוכנית טובה לא רק מתארת מה תעשי; היא מאפשרת לדעת מה השתנה ומי מחזיק את השינוי אחרייך.</p><p className="beforeAfter"><strong>לפני:</strong> “דיברנו על התאמות.” <strong>אחרי:</strong> “בשלושה מתוך ארבעה שיעורים המורה בחרה התאמה בעצמה והסבירה למה.”</p></div>{children}</section>; }
