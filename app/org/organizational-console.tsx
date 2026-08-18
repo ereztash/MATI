@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import styles from './organizational-console.module.css';
 import { MIN_AGGREGATE_COHORT, OrganizationalSignalKey } from '../../lib/organizational-signals';
 import { OrganizationalPack, summarizeOrganizationalPacks, validateOrganizationalPack } from '../../lib/organizational-pack';
+import { downloadJson } from '../../lib/download-json';
 
 const labels: Record<OrganizationalSignalKey, string> = {
   implementation_rate: 'שיעור מימוש', goal_attainment: 'השגת מטרות', meeting_execution: 'מימוש מפגשים', implementation_depth: 'עומק היישום',
@@ -28,6 +29,9 @@ export default function OrganizationalConsole() {
   const [packs, setPacks] = useState<OrganizationalPack[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [importNote, setImportNote] = useState('');
+  // Mirrors `packs` so an async import that resolves after another one still
+  // merges onto the newest list instead of the snapshot it closed over.
+  const packsRef = useRef<OrganizationalPack[]>([]);
   const summaries = useMemo(() => summarizeOrganizationalPacks(packs), [packs]);
   const contributors = new Set(packs.map((p) => p.contributorId)).size;
   const contexts = new Set(packs.map((p) => p.contextId)).size;
@@ -49,15 +53,16 @@ export default function OrganizationalConsole() {
       }
     }
 
-    const before = packs.length;
-    const merged = dedupe([...packs, ...accepted]);
-    const replaced = before + accepted.length - merged.length;
+    const before = packsRef.current;
+    const merged = dedupe([...before, ...accepted]);
+    const replaced = before.length + accepted.length - merged.length;
+    packsRef.current = merged;
     setPacks(merged);
     setErrors(rejected);
     setImportNote(`${accepted.length} התקבלו${replaced ? `, ${replaced} החליפו גרסה קודמת של אותה משתתפת/מסגרת/תקופה` : ''}.`);
   };
 
-  const clearAll = () => { setPacks([]); setErrors([]); setImportNote('כל החבילות הוסרו מהדפדפן.'); };
+  const clearAll = () => { packsRef.current = []; setPacks([]); setErrors([]); setImportNote('כל החבילות הוסרו מהדפדפן.'); };
 
   const downloadAggregate = () => {
     if (belowFloor) return;
@@ -78,13 +83,7 @@ export default function OrganizationalConsole() {
         mayAssertCausality: false,
       })),
     };
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `mati-organizational-aggregate-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadJson(report, `mati-organizational-aggregate-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
   return (
@@ -98,7 +97,7 @@ export default function OrganizationalConsole() {
       <section className={styles.intake}>
         <div><strong>ייבוא חבילות signal</strong><p>בחרי כמה קבצי MATI יחד. כל העיבוד מתבצע בדפדפן הזה בלבד; קובץ חדש מאותה משתתפת/מסגרת/תקופה מחליף את הקודם.</p></div>
         <div className={styles.intakeActions}>
-          <label className={styles.upload}>בחירת קבצים<input type="file" accept="application/json,.json" multiple onChange={(e) => importFiles(e.target.files)} /></label>
+          <label className={styles.upload}>בחירת קבצים<input type="file" accept="application/json,.json" multiple onChange={(e) => { const input = e.currentTarget; void importFiles(input.files).finally(() => { input.value = ''; }); }} /></label>
           {packs.length > 0 && <button type="button" className={styles.secondary} onClick={clearAll}>ניקוי</button>}
         </div>
       </section>

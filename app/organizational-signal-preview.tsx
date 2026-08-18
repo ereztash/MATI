@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { OrganizationalSignal, OrganizationalSignalKey } from '../lib/organizational-signals';
 import { MIN_AGGREGATE_COHORT } from '../lib/organizational-signals';
 import { createOrganizationalPack } from '../lib/organizational-pack';
+import { downloadJson } from '../lib/download-json';
 
 const CONTRIBUTOR_KEY = 'mati-organizational-contributor-id-v1';
 const CONTEXT_CODE_KEY = 'mati-organizational-context-code-v1';
@@ -64,13 +65,7 @@ export default function OrganizationalSignalPreview({ signals }: { signals: Orga
     }
 
     const pack = createOrganizationalPack({ contributorId, contextId: contextCode.trim(), periodId: periodId(), signals });
-    const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `mati-signal-${pack.periodId}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadJson(pack, `mati-signal-${pack.periodId}.json`);
     setExported(true);
   };
 
