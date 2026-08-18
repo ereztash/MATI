@@ -7,8 +7,6 @@ import { readStoredMatiState } from '../lib/state-hydration';
 import { extractOrganizationalSignals, OrganizationalSignal } from '../lib/organizational-signals';
 import OrganizationalSignalPreview from './organizational-signal-preview';
 
-const SIGNAL_SNAPSHOT_KEY = 'mati-organizational-signal-v0';
-
 export default function OrganizationalSignalLayer() {
   const [state, setState] = useState<MatiState>(emptyState);
   const [target, setTarget] = useState<Element | null>(null);
@@ -46,19 +44,6 @@ export default function OrganizationalSignalLayer() {
       window.removeEventListener('mati-state-changed', schedule as EventListener);
     };
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SIGNAL_SNAPSHOT_KEY, JSON.stringify({
-        schema: 'mati-organizational-signal-v0',
-        generatedAt: new Date().toISOString(),
-        localOnly: true,
-        signals,
-      }));
-    } catch {
-      // The signal snapshot is optional. Failure must never block the instructor workflow.
-    }
-  }, [signals]);
 
   if (!target) return null;
   return createPortal(<OrganizationalSignalPreview signals={signals} />, target);
