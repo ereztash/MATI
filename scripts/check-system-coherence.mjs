@@ -8,6 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 const contract = JSON.parse(read('lib', 'system-coherence-contract.json'));
 const stages = read('lib', 'stages.ts');
 const contextEngine = read('lib', 'context-engine.ts');
+const contextLayer = read('app', 'context-layer.tsx');
 const page = read('app', 'page.tsx');
 const experienceShell = read('app', 'experience-shell.tsx');
 const workSession = read('app', 'work-session-layer.tsx');
@@ -41,6 +42,7 @@ const requiredInvariants = [
   'R1_NO_DUPLICATE_SEMANTIC_WORK',
   'R2_PURPOSE_LIMIT_FREE_TEXT',
   'R3_DERIVATION_RETURNS_VALUE',
+  'R4_NO_UNUSED_TELEMETRY',
   'C1_SINGLE_RULE_SOURCE',
   'C2_SAME_TERM_SAME_MEANING',
   'C3_NO_EVIDENCE_IS_NOT_EVIDENCE',
@@ -68,6 +70,17 @@ if (!interactionBody.includes('state.formative.answers')) {
 }
 if (!interactionBody.includes("pace: 'balanced'") || !interactionBody.includes('minimalism: false') || !interactionBody.includes('overload: false')) {
   issue('UX_PROFILE_AUTHORITY_DRIFT', 'Content-derived pace/minimalism/overload must remain disabled unless separately authorized.');
+}
+
+// R4: keep only telemetry that currently drives a declared decision.
+for (const unused of ['visitCount', 'interactionCount', 'maxTouchPoints', 'touch: boolean', 'width?: number']) {
+  if (contextEngine.includes(unused) || contextLayer.includes(unused)) issue('UNUSED_UX_TELEMETRY', `Pilot still collects or models unused UX telemetry: ${unused}`);
+}
+if (!contextEngine.includes('sessionStartedAt: string') || !contextEngine.includes('lastVisitAt?: string') || !contextEngine.includes('device: DeviceClass')) {
+  issue('REQUIRED_UX_SIGNAL_MISSING', 'Minimal context contract must retain session start, last visit and device because current decisions use them.');
+}
+if (!contextLayer.includes("JSON.stringify({ lastVisitAt: new Date().toISOString() })")) {
+  issue('USAGE_STORAGE_SCOPE_DRIFT', 'Persistent UX usage storage must contain only lastVisitAt; session duration and device are session-local.');
 }
 
 const strategyBody = bodyOf(contextEngine, 'deriveCoachStrategy');
@@ -205,5 +218,5 @@ if (issues.length) {
 }
 
 console.log(`System coherence audit passed (${requiredInvariants.length} invariants, ${reviewed.length} cross-stage representations, ${heuristics.length} inquiry-only heuristics).`);
-console.log('Representation, source-of-truth, privacy, authority, identity, data-path, aggregation and documentation boundaries are aligned.');
+console.log('Representation, source-of-truth, privacy, authority, identity, telemetry, data-path, aggregation and documentation boundaries are aligned.');
 for (const item of warnings) console.log(`PENDING: ${item.message}`);
