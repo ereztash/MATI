@@ -84,10 +84,9 @@ export function greetingForDaypart(daypart: Daypart) {
 
 function stageWindow(date: Date, stage: Stage | null) {
   const y = date.getFullYear();
-  if (stage === 1) return { start: new Date(y, 6, 1), end: localDate(y, 8, 30) }; // Jul-Sep
-  if (stage === 3) return { start: new Date(y, 4, 1), end: localDate(y, 5, 30) }; // May-Jun
+  if (stage === 1) return { start: new Date(y, 6, 1), end: localDate(y, 8, 30) };
+  if (stage === 3) return { start: new Date(y, 4, 1), end: localDate(y, 5, 30) };
   if (stage === 2) {
-    // Dec-Feb crosses a calendar year.
     if (date.getMonth() === 11) return { start: new Date(y, 11, 1), end: localDate(y + 1, 1, 28 + Number(new Date(y + 1, 1, 29).getMonth() === 1)) };
     return { start: new Date(y - 1, 11, 1), end: localDate(y, 1, 28 + Number(new Date(y, 1, 29).getMonth() === 1)) };
   }
@@ -174,9 +173,6 @@ export function buildContextSnapshot(args: {
   if (args.usage.device === 'mobile') signals.push({ id: 'device-mobile', strength: 'medium', fact: 'העבודה נעשית כרגע ממסך קטן.', implication: 'להעדיף מקטע אחד בכל פעם ובחירות סגורות כשאפשר.' });
   if (sessionMinutes >= 22) signals.push({ id: 'long-session', strength: 'medium', fact: `הסשן הנוכחי נמשך כ־${sessionMinutes} דקות.`, implication: 'להציע נקודת עצירה או שמירה לפני פתיחת עומק נוסף.' });
   if (cal.daypart === 'late') signals.push({ id: 'late-hour', strength: 'weak', fact: 'הכניסה היא בשעה מאוחרת.', implication: 'זה signal חלש בלבד; לא להסיק עייפות ללא סימנים נוספים.' });
-  if (args.profile.pace === 'compact') signals.push({ id: 'compact-responses', strength: 'medium', fact: 'התשובות האחרונות קצרות יחסית.', implication: 'להעדיף ניסוח תמציתי ולהציע בחירה סגורה.' });
-  if (args.profile.overload) signals.push({ id: 'overload-language', strength: 'strong', fact: 'בתשובות מופיעים כמה סימני עומס מפורשים.', implication: 'להפחית עומס ולבדוק חסם אחד בכל פעם.' });
-  if (args.profile.minimalism) signals.push({ id: 'minimal-replies', strength: 'strong', fact: 'יש רצף של תשובות מינימליות.', implication: 'לעבור למצב ממוקד ולבדוק אם מתאים להרחיב.' });
 
   const contradictions = findContradictions(args.state);
   contradictions.forEach((fact, index) => signals.push({ id: `discrepancy-${index}`, strength: 'strong', fact, implication: 'לברר את הפער לפני המלצה.' }));
@@ -202,22 +198,18 @@ export function deriveCoachStrategy(snapshot: ContextSnapshot): CoachStrategy {
   const strong = snapshot.signals.filter((s) => s.strength === 'strong');
   const medium = snapshot.signals.filter((s) => s.strength === 'medium');
   const has = (id: string) => snapshot.signals.some((s) => s.id === id);
-  const lateCombined = has('late-hour') && (has('device-mobile') || has('compact-responses') || has('long-session'));
   const closing = snapshot.calendar.stagePosition === 'closing';
   const discrepancy = snapshot.contradictions.length > 0;
+  const observedLoad = has('long-session') || (has('late-hour') && has('device-mobile'));
 
-  let intensity: SupportIntensity = 'balanced';
-  let density: CoachStrategy['density'] = 'standard';
-  let preferredInput: CoachStrategy['preferredInput'] = 'mixed';
+  let intensity: SupportIntensity = observedLoad ? 'light' : 'balanced';
+  let density: CoachStrategy['density'] = has('device-mobile') ? 'compact' : 'standard';
+  let preferredInput: CoachStrategy['preferredInput'] = has('device-mobile') ? 'closed-first' : 'mixed';
 
-  if (has('overload-language') || has('minimal-replies') || lateCombined || (has('device-mobile') && has('compact-responses'))) {
-    intensity = 'light'; density = 'compact'; preferredInput = 'closed-first';
-  } else if (snapshot.profile.pace === 'deep' && !closing) {
-    intensity = 'deep'; density = 'expanded'; preferredInput = 'open-first';
+  if (closing) {
+    intensity = intensity === 'light' ? 'light' : 'balanced';
+    density = 'standard';
   }
-
-  if (closing && intensity === 'deep') intensity = 'balanced';
-  if (closing) density = density === 'expanded' ? 'standard' : density;
 
   const explanation = [...strong, ...medium].slice(0, 3).map((s) => s.fact);
   let headline: string | undefined;
@@ -230,11 +222,11 @@ export function deriveCoachStrategy(snapshot: ContextSnapshot): CoachStrategy {
     headline = 'אנחנו קרובות לסוף חלון השלב — עדיף לסגור את מה שמשנה החלטה.';
   } else if (has('return-gap')) {
     headline = 'חזרת אחרי הפסקה; נתחיל מנקודת העצירה ולא מהתחלה.';
-  } else if (intensity === 'light') {
+  } else if (observedLoad) {
     headline = 'אפשר לעבוד עכשיו במצב ממוקד וקצר.';
   }
 
-  return { intensity, density, preferredInput, tone: snapshot.profile.tone, headline, explanation, nextPrompt };
+  return { intensity, density, preferredInput, tone: 'direct', headline, explanation, nextPrompt };
 }
 
 export function sessionMinutes(usage: UsageContext, now = new Date()) {
