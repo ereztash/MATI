@@ -3,6 +3,7 @@ import { Heebo } from 'next/font/google';
 import './globals.css';
 import './context.css';
 import './experience.css';
+import './organizational-signals.css';
 import ContextLayer from './context-layer';
 import SessionStageReset from './session-stage-reset';
 import ExperienceShell from './experience-shell';
