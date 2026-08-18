@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "principle": "Representation Serves Practice",
+  "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
+  "invariants": [
+    {
+      "id": "R1_NO_DUPLICATE_SEMANTIC_WORK",
+      "class": "representation",
+      "rule": "A fact already collected may not be required again unless the later representation has a distinct temporal or professional meaning that is explicitly stated."
+    },
+    {
+      "id": "R2_PURPOSE_LIMIT_FREE_TEXT",
+      "class": "representation",
+      "rule": "Free reflection text may serve reflection and user-visible professional derivation, but may not be semantically mined to infer fatigue, emotion, personality, minimalism or UX state."
+    },
+    {
+      "id": "R3_DERIVATION_RETURNS_VALUE",
+      "class": "representation",
+      "rule": "A derived representation must return visible professional value and disclose that it is derived rather than directly observed."
+    },
+    {
+      "id": "C1_SINGLE_RULE_SOURCE",
+      "class": "coherence",
+      "rule": "Each professional gate has one declared source of truth; UI copy, code and documentation must not redefine it independently."
+    },
+    {
+      "id": "C2_SAME_TERM_SAME_MEANING",
+      "class": "coherence",
+      "rule": "The same term must keep the same semantic meaning across stages. Distinct temporal meanings must be named as distinct states rather than silently reused."
+    },
+    {
+      "id": "C3_NO_EVIDENCE_IS_NOT_EVIDENCE",
+      "class": "coherence",
+      "rule": "Absence of evidence may be represented as missing, pending or unresolved; it may not be described as an observed professional finding."
+    },
+    {
+      "id": "C4_PRIVACY_CLAIMS_MATCH_DATA_FLOW",
+      "class": "coherence",
+      "rule": "Claims about local storage, export and organizational projection must match the actual data path and distinguish automatic transmission from explicit user export."
+    },
+    {
+      "id": "C5_DETECTION_IS_NOT_AUTHORITY",
+      "class": "coherence",
+      "rule": "Detection, interpretation, recommendation, authorization, execution and propagation are distinct states. An auditor finding does not authorize a professional change."
+    },
+    {
+      "id": "C6_DOCS_COPY_CODE_ALIGN",
+      "class": "coherence",
+      "rule": "README, contracts, user-facing guidance and implementation must describe the same currently deployed behavior."
+    }
+  ],
+  "sourcesOfTruth": [
+    { "concept": "stage1_gate", "source": "lib/ux-structural-contract.json#stage1-plan" },
+    { "concept": "stage2_partial_gate", "source": "lib/ux-structural-contract.json#stage2-formative" },
+    { "concept": "stage3_question_units", "source": "lib/ux-structural-contract.json#stage3-summative" },
+    { "concept": "organizational_projection", "source": "docs/organizational-signal-contract.md" },
+    { "concept": "organizational_signal_schema", "source": "lib/organizational-signals.ts" },
+    { "concept": "context_adaptation", "source": "lib/context-engine.ts" }
+  ],
+  "protectedProfessionalAreas": [
+    "question wording",
+    "dimension definitions",
+    "scores and thresholds",
+    "stage gates",
+    "privacy authority",
+    "organizational causal interpretation"
+  ],
+  "pendingAuthorityConflicts": [
+    {
+      "id": "DIMENSION_SCORE_WITHOUT_EVIDENCE",
+      "status": "PENDING_HUMAN_AUTHORITY",
+      "protectedArea": "scores and thresholds",
+      "conflict": "scoreDimensions floors every dimension at 2/5 even when its evidence array is empty, while product copy states that missing evidence is not invented.",
+      "containment": "The conflict is registered and CI requires it to remain explicit. Do not reinterpret or change the approved score floor automatically. A domain decision must determine whether the display should suppress an unevidenced score or the scoring rule itself should change.",
+      "resolutionAuthority": "human product/domain decision"
+    }
+  ]
+}
