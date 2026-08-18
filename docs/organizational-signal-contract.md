@@ -4,7 +4,7 @@
 
 This contract defines what MATI may learn from one instructor's local work, what must remain private, what may be transformed into an anonymous organizational signal, and what authority the system has after a pattern is detected.
 
-The contract is intentionally stricter than the current technical architecture. MATI currently stores data locally in the browser and does not aggregate across instructors. This document prepares the boundary before any backend or managerial view exists.
+The contract is intentionally stricter than a future multi-user architecture. MATI currently stores each instructor's raw professional data locally in the browser. It can also export a filtered organizational signal pack and, in the separate local `/org` console, manually import multiple sanitized packs and aggregate them inside that browser. There is no backend, no automatic cross-device collection and no automatic transmission of raw reflection.
 
 ## Core rule
 
@@ -79,7 +79,7 @@ A `systemic_candidate` is still **not a causal diagnosis**. It means the organiz
 MATI may automatically:
 
 - extract a structured signal;
-- aggregate eligible signals after the privacy floor;
+- aggregate eligible signals after the privacy floor inside the local organizational console;
 - detect recurrence, spread and persistence;
 - surface a pattern;
 - suggest a question for human review.
@@ -102,7 +102,7 @@ The intended flow is:
 
 `private source -> structured signal -> projection gate -> aggregate pattern -> governance gate -> human decision`
 
-The current MATI pilot implements only the first three as local deterministic code plus the pattern classifier as a pure function. It does not yet send or aggregate signals across devices.
+The current MATI pilot implements the private source and structured projection locally, explicit export of sanitized signal packs, manual import of multiple packs into `/org`, local aggregation after the privacy floor, and the pattern classifier as deterministic code. It does **not** automatically collect across devices, synchronize instructors, transmit raw reflection, or provide a backend organizational database.
 
 ## Future backend requirement
 
