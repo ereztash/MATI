@@ -1,7 +1,10 @@
 import { emptyState, FormativeAnswers, MatiState } from './stages';
 
+export const MATI_STATE_KEY = 'mati-v2';
+export const MATI_LEGACY_KEY = 'mati-v1';
+
 /**
- * Canonical reader for persisted MATI state.
+ * Canonical interpreter for persisted MATI state.
  *
  * Every support layer must interpret the same local snapshot identically. This
  * function also preserves the legacy v1 formative-answer migration used by the
@@ -52,6 +55,15 @@ export function parseMatiState(raw: string | null): MatiState {
   if (!raw) return emptyState;
   try {
     return mergeMatiState(JSON.parse(raw));
+  } catch {
+    return emptyState;
+  }
+}
+
+export function readStoredMatiState(): MatiState {
+  if (typeof window === 'undefined') return emptyState;
+  try {
+    return parseMatiState(localStorage.getItem(MATI_STATE_KEY) ?? localStorage.getItem(MATI_LEGACY_KEY));
   } catch {
     return emptyState;
   }
