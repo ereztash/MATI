@@ -35,8 +35,8 @@ function readState(): MatiState {
   }
 }
 
-function currentStage(state: MatiState): Stage {
-  return (state.manualStage ?? stageFromDate() ?? 1) as Stage;
+function currentStage(state: MatiState): Stage | null {
+  return state.manualStage ?? stageFromDate();
 }
 
 function firstUsefulIndex(state: MatiState, stage: Stage, count: number) {
@@ -60,7 +60,8 @@ function singleItems(elements: HTMLElement[]): WorkItem[] {
   return elements.map((element) => ({ elements: [element] }));
 }
 
-function workItemsFor(stage: Stage): WorkItem[] {
+function workItemsFor(stage: Stage | null): WorkItem[] {
+  if (!stage) return [];
   if (stage === 1) return singleItems(Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .formSection')));
   if (stage === 2) return singleItems(Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .assessmentSection')));
 
@@ -96,7 +97,7 @@ function openInsight() {
 }
 
 export default function WorkSessionLayer() {
-  const [stage, setStage] = useState<Stage>(1);
+  const [stage, setStage] = useState<Stage | null>(null);
   const [index, setIndex] = useState(0);
   const [count, setCount] = useState(0);
   const [title, setTitle] = useState('');
@@ -109,6 +110,11 @@ export default function WorkSessionLayer() {
       timer = setTimeout(() => {
         const state = readState();
         const nextStage = currentStage(state);
+        if (!nextStage) {
+          setStage(null);
+          setCount(0);
+          return;
+        }
         const candidates = workItemsFor(nextStage);
         if (!candidates.length) return;
         const key = `${nextStage}:${candidates.length}:${state.formative.route}`;
@@ -152,6 +158,7 @@ export default function WorkSessionLayer() {
   const progress = useMemo(() => count ? Math.round(((index + 1) / count) * 100) : 0, [count, index]);
 
   const finish = () => {
+    if (!stage) return;
     const before = savedStamp(readState(), stage);
     const saveButton = document.querySelector<HTMLButtonElement>('.view-work .workExperience .actions .primary');
     if (!saveButton) { openInsight(); return; }
@@ -170,7 +177,7 @@ export default function WorkSessionLayer() {
     }, 180);
   };
 
-  if (count <= 1) return null;
+  if (!stage || count <= 1) return null;
 
   return (
     <section className="workSessionBar" aria-label="התקדמות בסשן העבודה">
