@@ -7,11 +7,13 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 
 const contract = JSON.parse(read('lib', 'system-coherence-contract.json'));
 const stages = read('lib', 'stages.ts');
+const stateHydration = read('lib', 'state-hydration.ts');
 const contextEngine = read('lib', 'context-engine.ts');
 const contextLayer = read('app', 'context-layer.tsx');
 const page = read('app', 'page.tsx');
 const experienceShell = read('app', 'experience-shell.tsx');
 const workSession = read('app', 'work-session-layer.tsx');
+const orgSignalLayer = read('app', 'organizational-signal-layer.tsx');
 const orgPreview = read('app', 'organizational-signal-preview.tsx');
 const orgPage = read('app', 'org', 'page.tsx');
 const orgConsole = read('app', 'org', 'organizational-console.tsx');
@@ -50,6 +52,7 @@ const requiredInvariants = [
   'C5_DETECTION_IS_NOT_AUTHORITY',
   'C6_DOCS_COPY_CODE_ALIGN',
   'C7_NO_SILENT_CLASSIFICATION',
+  'C8_CANONICAL_STATE_INTERPRETATION',
 ];
 const declared = new Set((contract.invariants ?? []).map((item) => item.id));
 for (const id of requiredInvariants) if (!declared.has(id)) issue('MISSING_INVARIANT', `System coherence contract is missing ${id}`);
@@ -66,9 +69,7 @@ if (/\.length\s*[<>]=?\s*\d+/.test(interactionBody) || /reduce\([^)]*\.length/.t
 for (const forbiddenSource of ['state.plan', 'state.formative.context', 'state.formative.post', 'state.summative', 'state.history']) {
   if (interactionBody.includes(forbiddenSource)) issue('UX_SENSOR_SCOPE_DRIFT', `Response-modality sensing must not use unrelated metadata or stages: ${forbiddenSource}`);
 }
-if (!interactionBody.includes('state.formative.answers')) {
-  issue('UX_SENSOR_SOURCE_MISSING', 'Response-modality sensing must be scoped to the formative answer surface.');
-}
+if (!interactionBody.includes('state.formative.answers')) issue('UX_SENSOR_SOURCE_MISSING', 'Response-modality sensing must be scoped to the formative answer surface.');
 if (!interactionBody.includes("pace: 'balanced'") || !interactionBody.includes('minimalism: false') || !interactionBody.includes('overload: false')) {
   issue('UX_PROFILE_AUTHORITY_DRIFT', 'Content-derived pace/minimalism/overload must remain disabled unless separately authorized.');
 }
@@ -88,9 +89,7 @@ const strategyBody = bodyOf(contextEngine, 'deriveCoachStrategy');
 for (const forbidden of ['snapshot.profile.pace', 'snapshot.profile.overload', 'snapshot.profile.minimalism', "has('overload-language')", "has('minimal-replies')", "has('compact-responses')"]) {
   if (strategyBody.includes(forbidden)) issue('CONTEXT_ENGINE_SECONDARY_USE', `Context strategy still depends on inferred reflection profile: ${forbidden}`);
 }
-if (!strategyBody.includes("has('device-mobile')") || !strategyBody.includes("has('long-session')")) {
-  issue('OBSERVABLE_CONTEXT_DRIFT', 'Context strategy should retain observable device/session signals as its low-risk adaptation basis.');
-}
+if (!strategyBody.includes("has('device-mobile')") || !strategyBody.includes("has('long-session')")) issue('OBSERVABLE_CONTEXT_DRIFT', 'Context strategy should retain observable device/session signals as its low-risk adaptation basis.');
 
 // R3: user-visible derivations must disclose derivation and preserve source authority.
 for (const phrase of [
@@ -121,21 +120,41 @@ for (const field of optionalStage1) {
 
 // C7: unresolved calendar gaps must remain unresolved in every support layer.
 for (const [name, source] of [['ExperienceShell', experienceShell], ['ContextLayer', contextLayer], ['WorkSessionLayer', workSession]]) {
-  if (/stageFromDate\([^)]*\)[^\n;]*\?\?\s*1/.test(source) || /automaticStage\s*\?\?\s*1/.test(source)) {
-    issue('SILENT_STAGE_CLASSIFICATION', `${name} silently defaults an unresolved calendar stage to Stage 1.`);
-  }
+  if (/stageFromDate\([^)]*\)[^\n;]*\?\?\s*1/.test(source) || /automaticStage\s*\?\?\s*1/.test(source)) issue('SILENT_STAGE_CLASSIFICATION', `${name} silently defaults an unresolved calendar stage to Stage 1.`);
 }
 if (!experienceShell.includes('if (!activeStage) return') || !contextLayer.includes('if (!activeStage) return null') || !workSession.includes('return state.manualStage ?? stageFromDate();')) {
   issue('UNRESOLVED_STAGE_PATH_DRIFT', 'Support layers must explicitly preserve the between-window unresolved stage until the instructor chooses.');
+}
+
+// C8: every support layer must use the canonical persisted-state interpreter.
+for (const [name, source] of [
+  ['ExperienceShell', experienceShell],
+  ['ContextLayer', contextLayer],
+  ['WorkSessionLayer', workSession],
+  ['OrganizationalSignalLayer', orgSignalLayer],
+]) {
+  if (!source.includes('readStoredMatiState')) issue('STATE_READER_DRIFT', `${name} no longer uses the canonical persisted-state reader.`);
+  if (source.includes('JSON.parse(raw) as Partial<MatiState>')) issue('INDEPENDENT_STATE_PARSER', `${name} has reintroduced an independent persisted-state parser.`);
+}
+if (!stateHydration.includes("MATI_STATE_KEY = 'mati-v2'") || !stateHydration.includes("MATI_LEGACY_KEY = 'mati-v1'")) {
+  issue('STATE_KEY_SOURCE_DRIFT', 'Canonical state hydration must own both current and legacy storage keys.');
+}
+const legacyMappings = [
+  ['q1', 'evidence'], ['q2', 'evidence'], ['q3', 'notes'], ['q4', 'evidence'], ['q5', 'reflection'],
+  ['q6', 'culturePositiveSign'], ['q7', 'evidence'], ['q8', 'didNotWork'], ['q9', ''],
+];
+for (const [question, field] of legacyMappings) {
+  const helperToken = field ? `${question}: { ...emptyState.formative.answers.${question}, ${field}: legacyAnswers.${question}` : `${question}: { ...emptyState.formative.answers.${question} }`;
+  if (!stateHydration.includes(helperToken)) issue('LEGACY_MIGRATION_DRIFT', `Canonical state hydration is missing legacy mapping for ${question}${field ? ` -> ${field}` : ''}.`);
+  const pageToken = field ? `${question}: { ...emptyState.formative.answers.${question}, ${field}: legacyAnswers.${question}` : `${question}: { ...emptyState.formative.answers.${question} }`;
+  if (!page.includes(pageToken)) issue('PAGE_MIGRATION_DRIFT', `Professional page migration no longer matches canonical legacy mapping for ${question}${field ? ` -> ${field}` : ''}.`);
 }
 
 // C2/R1: repeated cross-stage concepts must be explicitly reviewed as distinct temporal meanings.
 const reviewed = contract.reviewedCrossStageRepresentations ?? [];
 if (reviewed.length < 4) issue('CROSS_STAGE_REGISTRY_INCOMPLETE', 'Cross-stage representation registry is unexpectedly small.');
 for (const item of reviewed) {
-  if (item.status !== 'DISTINCT_TEMPORAL_MEANING' || !item.earlierMeaning || !item.laterMeaning) {
-    issue('CROSS_STAGE_SEMANTIC_AMBIGUITY', `${item.earlier} -> ${item.later} is not explicitly distinguished.`);
-  }
+  if (item.status !== 'DISTINCT_TEMPORAL_MEANING' || !item.earlierMeaning || !item.laterMeaning) issue('CROSS_STAGE_SEMANTIC_AMBIGUITY', `${item.earlier} -> ${item.later} is not explicitly distinguished.`);
 }
 for (const label of ['מסגרת זמן גסה', 'תקופת ההערכה', 'מטרת SMART אחת', 'מטרות מרכזיות בתוכנית']) {
   if (!page.includes(label)) issue('TEMPORAL_LABEL_DRIFT', `UI no longer distinguishes a reviewed cross-stage representation: ${label}`);
@@ -145,9 +164,7 @@ for (const label of ['מסגרת זמן גסה', 'תקופת ההערכה', 'מ�
 const heuristics = contract.inquiryOnlyHeuristics ?? [];
 if (heuristics.length < 5) issue('HEURISTIC_REGISTRY_INCOMPLETE', 'Inquiry-only heuristic registry is unexpectedly small.');
 for (const heuristic of heuristics) {
-  if (heuristic.authority !== 'INQUIRY_ONLY' || heuristic.mayGate !== false || heuristic.mayScore !== false || heuristic.mayAssertCausality !== false) {
-    issue('HEURISTIC_AUTHORITY_DRIFT', `${heuristic.id} exceeds inquiry-only authority.`);
-  }
+  if (heuristic.authority !== 'INQUIRY_ONLY' || heuristic.mayGate !== false || heuristic.mayScore !== false || heuristic.mayAssertCausality !== false) issue('HEURISTIC_AUTHORITY_DRIFT', `${heuristic.id} exceeds inquiry-only authority.`);
 }
 const canOpenBody = bodyOf(stages, 'canOpenStage');
 if (canOpenBody.includes('hasLargeGoalResultGap') || canOpenBody.includes('findContradictions')) issue('HEURISTIC_BECAME_GATE', 'An inquiry heuristic is being used as a stage gate.');
@@ -158,11 +175,7 @@ for (const causal of ['הסיבה היא', 'נגרם בגלל', 'גורם ל', '
 }
 
 // C6: documentation and implementation must describe the same Stage 1 gate and adaptation model.
-const oldSmartClaims = [
-  'בדיקת SMART בסיסית למטרה: זמן + רכיב מדיד',
-  'המטרה עצמה חייבת לכלול זמן',
-  'המטרה עצמה חייבת לכלול מדד',
-];
+const oldSmartClaims = ['בדיקת SMART בסיסית למטרה: זמן + רכיב מדיד', 'המטרה עצמה חייבת לכלול זמן', 'המטרה עצמה חייבת לכלול מדד'];
 const textDocs = [path.join(root, 'README.md'), ...walk(path.join(root, 'docs')).filter((file) => file.endsWith('.md'))];
 for (const file of textDocs) {
   const source = fs.readFileSync(file, 'utf8');
@@ -179,17 +192,11 @@ for (const phrase of ['Reflection belongs to the instructor', 'no automatic cros
   if (!orgContract.includes(phrase)) issue('ORGANIZATIONAL_AUTHORITY_DRIFT', `Organizational contract is missing current boundary: ${phrase}`);
 }
 if (orgContract.includes('does not aggregate across instructors')) issue('ORGANIZATIONAL_DOC_DRIFT', 'Organizational contract still claims no aggregation even though /org supports manual local multi-pack aggregation.');
-if (!orgConsole.includes('summarizeOrganizationalPacks(packs)') || (!orgConsole.includes('כמה קבצי MATI יחד') && !orgConsole.includes('multiple'))) {
-  issue('ORGANIZATIONAL_RUNTIME_DRIFT', '/org no longer clearly implements manual local multi-pack aggregation.');
-}
+if (!orgConsole.includes('summarizeOrganizationalPacks(packs)') || (!orgConsole.includes('כמה קבצי MATI יחד') && !orgConsole.includes('multiple'))) issue('ORGANIZATIONAL_RUNTIME_DRIFT', '/org no longer clearly implements manual local multi-pack aggregation.');
 for (const [name, source] of [['org page', orgPage], ['org console', orgConsole], ['signal preview', orgPreview]]) {
-  for (const forbidden of ['משתתפות אנונימיות', 'קוד מסגרת אנונימי']) {
-    if (source.includes(forbidden)) issue('ANONYMITY_OVERCLAIM', `${name} overstates pseudonymous data as anonymous: ${forbidden}`);
-  }
+  for (const forbidden of ['משתתפות אנונימיות', 'קוד מסגרת אנונימי']) if (source.includes(forbidden)) issue('ANONYMITY_OVERCLAIM', `${name} overstates pseudonymous data as anonymous: ${forbidden}`);
 }
-if (!orgPage.includes('פסבדונימיות') || !orgConsole.includes('מזהים פסבדונימיים') || !orgPreview.includes('פסבדונימ')) {
-  issue('PSEUDONYMITY_DISCLOSURE_DRIFT', 'Organizational surfaces must disclose that stable linkage identifiers are pseudonymous, not anonymous.');
-}
+if (!orgPage.includes('פסבדונימיות') || !orgConsole.includes('מזהים פסבדונימיים') || !orgPreview.includes('פסבדונימ')) issue('PSEUDONYMITY_DISCLOSURE_DRIFT', 'Organizational surfaces must disclose that stable linkage identifiers are pseudonymous, not anonymous.');
 if (!orgPreview.includes('כרגע: מקומי בלבד')) issue('PRIVACY_COPY_DRIFT', 'Instructor signal preview no longer states that the current signal state is local only.');
 if (!orgPreview.includes('ייצוא signal')) issue('PRIVACY_EXPORT_DRIFT', 'Explicit organizational signal export control is missing.');
 if (!readme.includes('אין שליחה אוטומטית של תוכן רפלקטיבי')) issue('PRIVACY_DOC_DRIFT', 'README must distinguish no automatic transmission from explicit local export.');
@@ -206,11 +213,8 @@ const dimensionFloorExists = stages.includes('Math.max(2, Math.min(5');
 const noEvidencePromiseExists = page.includes('כשאין נתון, המערכת מציינת שאין נתון ולא משלימה אותו');
 if (dimensionFloorExists && noEvidencePromiseExists) {
   const registered = pending.get('DIMENSION_SCORE_WITHOUT_EVIDENCE');
-  if (!registered || registered.status !== 'PENDING_HUMAN_AUTHORITY') {
-    issue('UNREGISTERED_PROFESSIONAL_CONFLICT', 'Unevidenced 2/5 dimension floor conflicts with the no-invention promise and is not registered for human authority.');
-  } else {
-    warning('PENDING_HUMAN_AUTHORITY', registered.conflict);
-  }
+  if (!registered || registered.status !== 'PENDING_HUMAN_AUTHORITY') issue('UNREGISTERED_PROFESSIONAL_CONFLICT', 'Unevidenced 2/5 dimension floor conflicts with the no-invention promise and is not registered for human authority.');
+  else warning('PENDING_HUMAN_AUTHORITY', registered.conflict);
 }
 
 // Lower-level structural contract must still cover the full journey.
@@ -229,5 +233,5 @@ if (issues.length) {
 }
 
 console.log(`System coherence audit passed (${requiredInvariants.length} invariants, ${reviewed.length} cross-stage representations, ${heuristics.length} inquiry-only heuristics).`);
-console.log('Representation, source-of-truth, unresolved-state, privacy, authority, identity, telemetry, data-path, aggregation and documentation boundaries are aligned.');
+console.log('Representation, state interpretation, source-of-truth, unresolved-state, privacy, authority, identity, telemetry, data-path, aggregation and documentation boundaries are aligned.');
 for (const item of warnings) console.log(`PENDING: ${item.message}`);
