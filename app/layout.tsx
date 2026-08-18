@@ -3,10 +3,12 @@ import { Heebo } from 'next/font/google';
 import './globals.css';
 import './context.css';
 import './experience.css';
+import './organizational-signals.css';
 import ContextLayer from './context-layer';
 import SessionStageReset from './session-stage-reset';
 import ExperienceShell from './experience-shell';
 import WorkSessionLayer from './work-session-layer';
+import OrganizationalSignalLayer from './organizational-signal-layer';
 
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
@@ -29,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <WorkSessionLayer />
           {children}
         </ExperienceShell>
+        <OrganizationalSignalLayer />
       </body>
     </html>
   );
