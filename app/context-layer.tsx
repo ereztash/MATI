@@ -97,8 +97,11 @@ export default function ContextLayer() {
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') setUsage((current) => { if (current) persistUsage(current, interactions); return current; });
     };
+    // Closed-choice answers (scales, option groups) are <button> clicks and emit
+    // neither input nor change, so a click listener is required to see them.
     window.addEventListener('input', refresh, true);
     window.addEventListener('change', refresh, true);
+    window.addEventListener('click', refresh, true);
     window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     const minuteTicker = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -107,6 +110,7 @@ export default function ContextLayer() {
       clearInterval(minuteTicker);
       window.removeEventListener('input', refresh, true);
       window.removeEventListener('change', refresh, true);
+      window.removeEventListener('click', refresh, true);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       persistUsage(initialUsage, interactions);

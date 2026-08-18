@@ -79,13 +79,17 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
     refresh();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onInteraction = () => { clearTimeout(timer); timer = setTimeout(refresh, 220); };
+    // Closed-choice answers (scales, option groups) are <button> clicks and emit
+    // neither input nor change, so a click listener is required to see them.
     window.addEventListener('input', onInteraction, true);
     window.addEventListener('change', onInteraction, true);
+    window.addEventListener('click', onInteraction, true);
     window.addEventListener('mati-state-changed', onInteraction as EventListener);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('input', onInteraction, true);
       window.removeEventListener('change', onInteraction, true);
+      window.removeEventListener('click', onInteraction, true);
       window.removeEventListener('mati-state-changed', onInteraction as EventListener);
     };
   }, []);
