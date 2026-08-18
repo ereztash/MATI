@@ -22,15 +22,15 @@ function sameMembers(actual, expected) {
 }
 
 function parseQuestionIds(source, name) {
-  const match = source.match(new RegExp(`const ${name}[^=]*= \\[([^\\]]*)\\]`));
+  const match = source.match(new RegExp(`const\\s+${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`));
   if (!match) return [];
-  return [...match[1].matchAll(/['"](q\\d)['"]/g)].map((item) => item[1]);
+  return [...match[1].matchAll(/['"](q\d+)['"]/g)].map((item) => item[1]);
 }
 
 function parseNumberArray(source, name) {
-  const match = source.match(new RegExp(`const ${name}[^=]*= \\[([^\\]]*)\\]`));
+  const match = source.match(new RegExp(`const\\s+${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`));
   if (!match) return [];
-  return [...match[1].matchAll(/\\d+/g)].map((item) => Number(item[0]));
+  return [...match[1].matchAll(/\d+/g)].map((item) => Number(item[0]));
 }
 
 export function auditFlow(flow) {
