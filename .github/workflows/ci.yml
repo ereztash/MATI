@@ -22,5 +22,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Organizational signal contract
         run: npm run check:signals
+      - name: RTL design contract
+        run: npm run check:design
       - name: Production build
         run: npm run build
