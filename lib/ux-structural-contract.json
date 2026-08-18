@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "flows": [
+    {
+      "id": "stage1-plan",
+      "label": "שלב 1 · תכנון",
+      "fields": [
+        {
+          "id": "audience",
+          "required": true,
+          "provides": [{ "fact": "target_audience", "count": 1 }],
+          "validatorRequires": ["target_audience"]
+        },
+        {
+          "id": "smartGoal",
+          "required": true,
+          "provides": [{ "fact": "desired_change", "count": 1 }],
+          "validatorRequires": ["desired_change"]
+        },
+        {
+          "id": "metric1",
+          "required": true,
+          "provides": [{ "fact": "success_measure", "count": 1 }],
+          "validatorRequires": ["success_measure"]
+        },
+        {
+          "id": "metric2",
+          "required": true,
+          "provides": [{ "fact": "success_measure", "count": 1 }],
+          "validatorRequires": ["success_measure"]
+        },
+        {
+          "id": "timeframe",
+          "required": true,
+          "provides": [{ "fact": "timeframe", "count": 1 }],
+          "validatorRequires": ["timeframe"]
+        },
+        {
+          "id": "flexibility",
+          "required": false,
+          "provides": [{ "fact": "flexibility_boundary", "count": 1 }],
+          "validatorRequires": []
+        },
+        {
+          "id": "managers",
+          "required": false,
+          "provides": [{ "fact": "manager_support", "count": 1 }],
+          "validatorRequires": []
+        },
+        {
+          "id": "independence",
+          "required": false,
+          "provides": [{ "fact": "desired_independence", "count": 1 }],
+          "validatorRequires": []
+        }
+      ],
+      "gate": {
+        "id": "plan-ready",
+        "requires": [
+          { "fact": "target_audience", "count": 1 },
+          { "fact": "desired_change", "count": 1 },
+          { "fact": "success_measure", "count": 2 },
+          { "fact": "timeframe", "count": 1 }
+        ]
+      }
+    }
+  ]
+}
