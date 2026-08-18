@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This contract defines what MATI may learn from one instructor's local work, what must remain private, what may be transformed into an anonymous organizational signal, and what authority the system has after a pattern is detected.
+This contract defines what MATI may learn from one instructor's local work, what must remain private, what may be transformed into a filtered pseudonymous organizational signal, and what authority the system has after a pattern is detected.
 
 The contract is intentionally stricter than a future multi-user architecture. MATI currently stores each instructor's raw professional data locally in the browser. It can also export a filtered organizational signal pack and, in the separate local `/org` console, manually import multiple sanitized packs and aggregate them inside that browser. There is no backend, no automatic cross-device collection and no automatic transmission of raw reflection.
 
@@ -16,6 +16,12 @@ The system therefore separates four layers:
 2. **Structured local signal** — categorical or quantitative evidence extracted only from structured fields.
 3. **Aggregate pattern** — a non-identifying pattern across enough contributors/contexts/time windows.
 4. **Human-governed organizational action** — interpretation, policy and intervention remain human authority.
+
+## Pseudonymity, not anonymity
+
+A signal pack contains a stable random `contributorId`, a coded `contextId`, and a `periodId`. These fields intentionally support linking the same pseudonymous contributor/context across periods. They do not contain the instructor's name or framework name, but the pack is therefore **pseudonymous rather than anonymous**.
+
+The privacy floor of five contributors reduces exposure before patterns are surfaced; it is not an anonymization guarantee. The local `/org` console must not describe contributors or packs as mathematically anonymous.
 
 ## Projection policy
 
@@ -102,7 +108,7 @@ The intended flow is:
 
 `private source -> structured signal -> projection gate -> aggregate pattern -> governance gate -> human decision`
 
-The current MATI pilot implements the private source and structured projection locally, explicit export of sanitized signal packs, manual import of multiple packs into `/org`, local aggregation after the privacy floor, and the pattern classifier as deterministic code. It does **not** automatically collect across devices, synchronize instructors, transmit raw reflection, or provide a backend organizational database.
+The current MATI pilot implements the private source and structured projection locally, explicit export of sanitized pseudonymous signal packs, manual import of multiple packs into `/org`, local aggregation after the privacy floor, and the pattern classifier as deterministic code. It does **not** automatically collect across devices, synchronize instructors, transmit raw reflection, or provide a backend organizational database.
 
 ## Future backend requirement
 
