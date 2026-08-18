@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "flows": [
     {
       "id": "stage1-plan",
@@ -56,6 +56,7 @@
       ],
       "gate": {
         "id": "plan-ready",
+        "mode": "all",
         "requires": [
           { "fact": "target_audience", "count": 1 },
           { "fact": "desired_change", "count": 1 },
@@ -63,6 +64,76 @@
           { "fact": "timeframe", "count": 1 }
         ]
       }
+    },
+    {
+      "id": "stage2-formative",
+      "label": "שלב 2 · הערכה מעצבת",
+      "fields": [
+        { "id": "q1", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q2", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q3", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q4", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q5", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q6", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q7", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q8", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] },
+        { "id": "q9", "required": false, "provides": [{ "fact": "formative_observation", "count": 1 }], "validatorRequires": [] }
+      ],
+      "gate": {
+        "id": "formative-save",
+        "mode": "any",
+        "requires": [{ "fact": "formative_observation", "count": 1 }]
+      },
+      "routes": [
+        { "id": "short", "fields": ["q1", "q2", "q5", "q8", "q9"] },
+        { "id": "full", "fields": ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"], "complete": true }
+      ]
+    },
+    {
+      "id": "stage3-summative",
+      "label": "שלב 3 · הערכה מסכמת",
+      "fields": [
+        {
+          "id": "achievement",
+          "required": true,
+          "provides": [{ "fact": "central_achievement", "count": 1 }],
+          "validatorRequires": ["central_achievement"]
+        },
+        {
+          "id": "achievementMetric",
+          "required": true,
+          "provides": [{ "fact": "achievement_evidence", "count": 1 }],
+          "validatorRequires": ["achievement_evidence"]
+        },
+        {
+          "id": "turningPoint",
+          "required": true,
+          "provides": [{ "fact": "personal_turning_point", "count": 1 }],
+          "validatorRequires": ["personal_turning_point"]
+        },
+        {
+          "id": "nextYearChange",
+          "required": true,
+          "provides": [{ "fact": "next_year_change", "count": 1 }],
+          "validatorRequires": ["next_year_change"]
+        }
+      ],
+      "gate": {
+        "id": "summative-save",
+        "mode": "all",
+        "requires": [
+          { "fact": "central_achievement", "count": 1 },
+          { "fact": "achievement_evidence", "count": 1 },
+          { "fact": "personal_turning_point", "count": 1 },
+          { "fact": "next_year_change", "count": 1 }
+        ]
+      },
+      "uiUnits": [
+        { "id": "question-1", "fields": ["achievement", "achievementMetric"] },
+        { "id": "question-2", "fields": ["turningPoint"] },
+        { "id": "question-3", "fields": ["nextYearChange"] }
+      ],
+      "expectedUiUnits": 3
     }
   ]
 }
