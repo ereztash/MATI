@@ -24,5 +24,7 @@ jobs:
         run: npm run check:signals
       - name: RTL design contract
         run: npm run check:design
+      - name: Structural UX semantic contract
+        run: npm run check:semantic-ux
       - name: Production build
         run: npm run build
