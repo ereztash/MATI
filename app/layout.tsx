@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Heebo } from 'next/font/google';
 import './globals.css';
+import './context.css';
+import ContextLayer from './context-layer';
 
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
@@ -16,7 +18,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="he" dir="rtl" className={heebo.variable}>
-      <body>{children}</body>
+      <body>
+        <ContextLayer />
+        {children}
+      </body>
     </html>
   );
 }
