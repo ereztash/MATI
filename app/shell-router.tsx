@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import ContextLayer from './context-layer';
 import ExperienceShell from './experience-shell';
 import OrganizationalSignalLayer from './organizational-signal-layer';
+import SessionStageReset from './session-stage-reset';
 import WorkSessionLayer from './work-session-layer';
 
 export default function ShellRouter({ children }: { children: React.ReactNode }) {
@@ -14,6 +15,7 @@ export default function ShellRouter({ children }: { children: React.ReactNode })
 
   return (
     <>
+      <SessionStageReset />
       <ExperienceShell>
         <ContextLayer />
         <WorkSessionLayer />

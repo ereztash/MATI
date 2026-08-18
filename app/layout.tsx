@@ -4,7 +4,6 @@ import './globals.css';
 import './context.css';
 import './experience.css';
 import './organizational-signals.css';
-import SessionStageReset from './session-stage-reset';
 import ShellRouter from './shell-router';
 
 const heebo = Heebo({
@@ -22,7 +21,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="he" dir="rtl" className={heebo.variable}>
       <body>
-        <SessionStageReset />
         <ShellRouter>{children}</ShellRouter>
       </body>
     </html>
