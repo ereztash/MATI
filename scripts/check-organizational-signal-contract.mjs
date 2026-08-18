@@ -21,18 +21,25 @@ if (cohort < 5) throw new Error(`Privacy floor too low: ${cohort}. Expected >= 5
 if (!source.includes('mayAssertCausality: false')) throw new Error('Systemic classifier must explicitly deny causal assertion.');
 if (!source.includes("projection: 'aggregate_only'")) throw new Error('Signals must be aggregate-only by construction.');
 
+// The live instructor-side path is intentionally ephemeral:
+// private state -> sanitized extractor -> visible preview -> explicit pack export.
+// Do not require or permit a cached signal snapshot when there is no consumer.
 const layer = stripComments(read('app', 'organizational-signal-layer.tsx'));
-const snapshotStart = layer.indexOf('localStorage.setItem(SIGNAL_SNAPSHOT_KEY');
-const snapshotEnd = layer.indexOf('} catch', snapshotStart);
-if (snapshotStart < 0 || snapshotEnd < 0) throw new Error('Could not locate local organizational signal snapshot boundary.');
-const snapshot = layer.slice(snapshotStart, snapshotEnd);
-if (!snapshot.includes('signals')) throw new Error('Organizational snapshot must contain the sanitized signals array.');
-const forbiddenSnapshotFields = ['state,', 'source,', 'instructorName', 'framework', 'reflection', 'evidence', 'notes', 'shortages'];
-const snapshotLeaks = forbiddenSnapshotFields.filter((field) => snapshot.includes(field));
-if (snapshotLeaks.length) throw new Error(`Private/raw state entered organizational snapshot: ${snapshotLeaks.join(', ')}`);
+if (!layer.includes('extractOrganizationalSignals(state)')) throw new Error('Organizational signal layer must derive signals through the sanitized extractor.');
+if (!layer.includes('<OrganizationalSignalPreview signals={signals}')) throw new Error('Sanitized signals must flow directly into the visible/exportable preview.');
+for (const forbiddenLayer of ['SIGNAL_SNAPSHOT_KEY', 'mati-organizational-signal-v0', 'localStorage.setItem']) {
+  if (layer.includes(forbiddenLayer)) throw new Error(`Organizational signal layer reintroduced unused persisted derived state: ${forbiddenLayer}`);
+}
+
+const preview = stripComments(read('app', 'organizational-signal-preview.tsx'));
+if (!preview.includes('createOrganizationalPack')) throw new Error('Instructor preview must create exports through the strict organizational pack builder.');
+if (!preview.includes('exportPack')) throw new Error('Organizational export must remain an explicit user action.');
+for (const forbiddenPreview of ['state.plan', 'state.formative', 'state.summative', 'reflection:', 'evidence:']) {
+  if (preview.includes(forbiddenPreview)) throw new Error(`Instructor signal preview crossed back into private/raw state: ${forbiddenPreview}`);
+}
 
 const pack = stripComments(read('lib', 'organizational-pack.ts'));
-for (const required of ['TOP_LEVEL_KEYS', 'SIGNAL_KEYS', 'exactKeys', 'projection: \'aggregate_only\'']) {
+for (const required of ['TOP_LEVEL_KEYS', 'SIGNAL_KEYS', 'exactKeys', "projection: 'aggregate_only'"]) {
   if (!pack.includes(required)) throw new Error(`Strict organizational pack contract missing: ${required}`);
 }
 const forbiddenPackFields = ['instructorName', 'framework', 'reflection', 'evidence', 'notes', 'shortages', 'turningPoint', 'centralMistake', 'feeling'];
@@ -44,6 +51,7 @@ for (const forbiddenImport of ['MatiState', 'mati-v2', 'localStorage']) {
   if (consoleSource.includes(forbiddenImport)) throw new Error(`Organizational console crossed private-state boundary: ${forbiddenImport}`);
 }
 if (!consoleSource.includes('validateOrganizationalPack')) throw new Error('Organizational console must validate every imported pack.');
+if (!consoleSource.includes('summarizeOrganizationalPacks(packs)')) throw new Error('Organizational console must aggregate only validated sanitized packs.');
 
 const rootLayout = stripComments(read('app', 'layout.tsx'));
 if (rootLayout.includes('SessionStageReset') || rootLayout.includes('OrganizationalSignalLayer') || rootLayout.includes('ContextLayer')) {
