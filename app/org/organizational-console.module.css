@@ -79,7 +79,9 @@
 .limit p { margin:5px 0 0;font-size:.8rem; }
 .footer { margin-top:28px;padding-top:20px;border-top:1px solid #dfe3dc;font-size:.82rem; }
 
-@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important;scroll-behavior:auto!important; } }
+@media (prefers-reduced-motion:reduce) {
+  .shell,.shell *,.shell *::before,.shell *::after { transition:none!important;scroll-behavior:auto!important; }
+}
 @media (max-width:760px) {
   .shell { padding:28px 14px 60px; }
   .hero { margin-bottom:22px; }
