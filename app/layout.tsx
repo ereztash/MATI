@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Heebo } from 'next/font/google';
 import './globals.css';
 import './context.css';
+import './experience.css';
 import ContextLayer from './context-layer';
 import SessionStageReset from './session-stage-reset';
 import ExperienceShell from './experience-shell';
