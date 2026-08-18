@@ -26,5 +26,7 @@ jobs:
         run: npm run check:design
       - name: Structural UX semantic contract
         run: npm run check:semantic-ux
+      - name: System coherence contract
+        run: npm run check:coherence
       - name: Production build
         run: npm run build
