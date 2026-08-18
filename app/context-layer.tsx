@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { analyzeInteraction, emptyState, MatiState, stageFromDate } from '../lib/stages';
+import { readStoredMatiState } from '../lib/state-hydration';
 import {
   buildContextSnapshot,
   deriveCoachStrategy,
@@ -10,34 +11,7 @@ import {
   UsageContext,
 } from '../lib/context-engine';
 
-const STATE_KEY = 'mati-v2';
 const USAGE_KEY = 'mati-usage-v1';
-
-function hydrateState(raw: string | null): MatiState {
-  if (!raw) return emptyState;
-  try {
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: {
-          ...emptyState.formative.answers,
-          ...(source.formative?.answers ?? {}),
-        },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
-}
 
 function deviceFromWidth(width: number): DeviceClass {
   if (width < 720) return 'mobile';
@@ -70,14 +44,14 @@ export default function ContextLayer() {
     const now = new Date();
     const initialUsage = readUsage(now);
     setUsage(initialUsage);
-    setState(hydrateState(localStorage.getItem(STATE_KEY)));
+    setState(readStoredMatiState());
     persistUsage();
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        setState(hydrateState(localStorage.getItem(STATE_KEY)));
+        setState(readStoredMatiState());
         setTick((v) => v + 1);
       }, 180);
     };
