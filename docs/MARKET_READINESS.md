@@ -27,15 +27,21 @@ The planning window (יולי–ספטמבר) is the only chance this year to st
 |---|---|---|---|---|
 | R1 | A מדריכה who has never seen MATI completes a work plan alone, on her own phone, without training | שימוש | human | ❌ never observed |
 | R2 | Her work survives closing the browser and restarting the device | שימוש | auto | ✅ verified 2026-08-18 |
-| R3 | She has a way to recover her work if the browser/device is wiped | שימוש | auto | ❌ no backup path exists |
+| R3 | She has a way to recover her work if the browser/device is wiped | שימוש | auto | ⏸️ parked 2026-08-18 |
 | R4 | Changes to a saved plan are recorded as before/after, not silently overwritten | שינוי | auto | ✅ built 2026-08-18 |
-| R5 | The product states explicitly that the reflection is not used to rate her | שימוש | auto | ❌ not stated |
+| R5 | The product states explicitly that the reflection is not used to rate her | שימוש | auto | ✅ built 2026-08-18 |
 | R6 | A named person owns "זה לא עובד לי" and מדריכות know who it is | ארגון | human | ❌ undefined |
 
 **R4 and R5 are the two that carry the manager's own reasoning.**
 
 - **R4 — closed 2026-08-18.** She said it twice, unprompted: *"היא משנה משהו שתכננה"* (Q2) and *"המערכת צריכה לשמור שינויים בתוכנית לאורך זמן"* (Q4). `savePlan` used to overwrite in place, so a plan changed in November was indistinguishable from one written that way in August — the pilot's own success criterion was not hard to measure but *impossible*. Each save now diffs against the previous saved version and keeps the before/after (`lib/plan-revisions.ts`), and the instructor sees what she changed and when. Only substantive plan fields count: Gantt date nudges and the socratic self-answers are excluded, so the change signal is not inflated by the very product measuring it.
-- **R5** — Q20: the one thing a מדריכה must understand in advance so she can answer honestly is *"שהרפלקציה לא משמשת לדירוג שלה."* Honest answers are the input to everything else, so this is load-bearing, not copywriting.
+- **R5 — closed 2026-08-18.** Q20: the one thing a מדריכה must understand in advance so she can answer honestly is *"שהרפלקציה לא משמשת לדירוג שלה."* Honest answers are the input to everything else, so this is load-bearing, not copywriting. Stated in two places: persistently in the header beside the storage note, and again in full at the top of Stage 2 — immediately before the nine sections where she is asked to write candidly about her own work.
+
+## The persistence family — parked 2026-08-18
+
+**R3, R7 and R10 are parked by explicit decision**, together rather than separately: an instructor-facing backup, a real store, and a transport that carries signals to the organization are one problem at three sizes, and closing any one alone would leave the others incoherent.
+
+The long pole is not the code. Once anything leaves the device, the commitment made to מדריכות changes, and that is a conversation with the manager and the supervision — about data concerning teachers and students in the education system — not an implementation task. **That conversation is the critical path and should start well before December**, which is when Stage 2 makes the loss of a device genuinely unrecoverable: a Stage 1 plan is ten fields she can retype, while the nine-section questionnaire is reflection that cannot be reconstructed from memory.
 
 ---
 
@@ -45,10 +51,10 @@ The manager put the peak value here (Q5): *"בנקודת הבדיקה הראשו
 
 | # | Criterion | Layer | Check | Status |
 |---|---|---|---|---|
-| R7 | The 9-section questionnaire cannot be lost — real persistence, not localStorage alone | שימוש | auto | ❌ localStorage only |
-| R8 | A generic answer ("היה תהליך משמעותי") is met with a request for a concrete anchor | שינוי | auto | ❌ not built |
-| R9 | An independence/dependency gap is surfaced prominently, not buried in a dimension score | שינוי | auto | ⚠️ partial |
-| R10 | Signals reach the organization without a person chasing files | ארגון | human | ⚠️ manual export/import |
+| R7 | The 9-section questionnaire cannot be lost — real persistence, not localStorage alone | שימוש | auto | ⏸️ parked 2026-08-18 |
+| R8 | A generic answer ("היה תהליך משמעותי") is met with a request for a concrete anchor | שינוי | auto | ✅ built 2026-08-18 |
+| R9 | An independence/dependency gap is surfaced prominently, not buried in a dimension score | שינוי | auto | ✅ built 2026-08-18 |
+| R10 | Signals reach the organization without a person chasing files | ארגון | human | ⏸️ parked 2026-08-18 |
 | R11 | Pattern sensitivity matches the manager's threshold: 2–3 repetitions in one framework is enough to warrant inquiry | ארגון | auto | ✅ resolved 2026-08-18 |
 
 **R11 was a contradiction, and it was decided rather than split.** Q12 asked for sensitivity at *"2–3 חזרות באותה מסגרת"*; the classifier withheld everything below 5 contributors, which at this cohort size could have meant the organization saw nothing for a whole year. Decided 2026-08-18: **the floor drops from 5 to 3, and a local cluster surfaces when it bears on implementation** — Q11 is explicit that recurrence alone is not systemic, so impact remains the gate. Surfacing stays an invitation to ask, never a causal claim (Q14, Q22).

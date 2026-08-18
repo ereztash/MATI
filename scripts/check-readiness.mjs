@@ -71,8 +71,15 @@ const probes = [
   {
     id: 'R8',
     label: 'generic answer prompts for a concrete anchor',
-    met: /דוגמה קונקרטית|עוגן|אירוע ספציפי|תוכלי לתת דוגמה/.test(page),
+    // Must be wired into the page, not merely present as a library.
+    met: /needsConcreteAnchor/.test(page) && /AnchorHint/.test(page),
     why: 'a generic reflective answer is accepted as-is',
+  },
+  {
+    id: 'R9',
+    label: 'independence gap surfaced on its own terms',
+    met: /independenceReading/.test(page) && /stopAndCheck/.test(read('lib', 'independence.ts')),
+    why: 'independence is only one score among five, where a stop-and-look signal goes unnoticed',
   },
   {
     id: 'R11',
