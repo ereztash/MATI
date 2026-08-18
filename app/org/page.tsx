@@ -3,7 +3,7 @@ import OrganizationalConsole from './organizational-console';
 
 export const metadata: Metadata = {
   title: 'תמונת מערכת | מתי המתי״א',
-  description: 'קונסולה מקומית לניתוח חבילות signal אנונימיות של MATI בלי חשיפת רפלקציה אישית.',
+  description: 'קונסולה מקומית לניתוח חבילות signal פסבדונימיות וללא טקסט רפלקטיבי, בלי חשיפת הרפלקציה האישית.',
 };
 
 export default function OrganizationalPage() {

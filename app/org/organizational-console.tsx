@@ -92,7 +92,7 @@ export default function OrganizationalConsole() {
       <header className={styles.hero}>
         <a href="/" className={styles.back}>← חזרה למדריכה</a><span>תמונת מערכת</span>
         <h1>לראות דפוסים בלי לפתוח את הרפלקציה</h1>
-        <p>הקונסולה קוראת רק חבילות signal מסוננות. היא לא מקבלת שמות, טקסט חופשי, ראיות כתובות או נקודות מפנה אישיות.</p>
+        <p>הקונסולה קוראת רק חבילות signal מסוננות. היא לא מקבלת שמות, טקסט חופשי, ראיות כתובות או נקודות מפנה אישיות. החבילות כן כוללות מזהים פסבדונימיים יציבים כדי לחבר בין תקופות, ולכן אינן מוצגות כאנונימיות במובן חזק.</p>
       </header>
 
       <section className={styles.intake}>
@@ -107,14 +107,14 @@ export default function OrganizationalConsole() {
       {errors.length > 0 && <section className={styles.errors} aria-live="polite">{errors.map((error) => <p key={error}>{error}</p>)}</section>}
 
       <section className={styles.kpis} aria-label="היקף הנתונים">
-        <div><b>{contributors}</b><span>משתתפות אנונימיות</span></div><div><b>{contexts}</b><span>מסגרות מקודדות</span></div>
+        <div><b>{contributors}</b><span>משתתפות ללא שם</span></div><div><b>{contexts}</b><span>מסגרות מקודדות</span></div>
         <div><b>{periods}</b><span>תקופות</span></div><div><b>{surfaceable.length}</b><span>דפוסים שניתן להציג</span></div>
       </section>
 
       {packs.length === 0 ? (
         <section className={styles.empty}><h2>עוד אין נתונים ארגוניים.</h2><p>זה מצב תקין: MATI לא ממציאה תמונת מערכת לפני שנאספו חבילות signal אמיתיות.</p></section>
       ) : belowFloor ? (
-        <section className={styles.privacyBlock}><span>רצפת פרטיות פעילה</span><h2>עדיין לא מציגים דפוסים.</h2><p>יש {contributors} משתתפות ייחודיות. נדרשות לפחות {MIN_AGGREGATE_COHORT} לפני שאפשר להציג תמונה מצטברת.</p></section>
+        <section className={styles.privacyBlock}><span>רצפת פרטיות פעילה</span><h2>עדיין לא מציגים דפוסים.</h2><p>יש {contributors} משתתפות ייחודיות לפי המזהים הפסבדונימיים. נדרשות לפחות {MIN_AGGREGATE_COHORT} לפני שאפשר להציג תמונה מצטברת.</p></section>
       ) : (
         <section className={styles.patterns}>
           <div className={styles.sectionHead}>
@@ -140,7 +140,7 @@ export default function OrganizationalConsole() {
       )}
 
       <section className={styles.limit}><strong>מגבלה ידועה של הפיילוט</strong><p>מזהה המשתתפת קשור למכשיר. מעבר למכשיר אחר עלול להיספר כמשתתפת חדשה. חשבונות משתמשים יפתרו זאת בשלב הבא; עד אז אין להשתמש בנתונים לספירה פורמלית של כוח אדם.</p></section>
-      <footer className={styles.footer}>אין כאן מידע אישי ברמת מדריכה. זיהוי סיבה, קביעת מדיניות ופעולה נשארים בסמכות אנושית.</footer>
+      <footer className={styles.footer}>אין כאן שם או טקסט אישי ברמת מדריכה, אך קיימים מזהים פסבדונימיים לקישור בין תקופות. זיהוי סיבה, קביעת מדיניות ופעולה נשארים בסמכות אנושית.</footer>
     </main>
   );
 }

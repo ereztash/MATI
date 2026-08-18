@@ -150,24 +150,40 @@ export function formativeCompletion(state: MatiState) {
 
 export type InteractionProfile = { style: 'analytic' | 'intuitive' | 'mixed' | 'unknown'; pace: 'compact' | 'deep' | 'balanced'; tone: 'soft' | 'direct'; minimalism: boolean; overload: boolean; responseCount: number; };
 
-function collectStrings(value: unknown, into: string[] = []): string[] {
-  if (typeof value === 'string' && value.trim()) into.push(value.trim());
-  else if (value && typeof value === 'object') Object.values(value as Record<string, unknown>).forEach((v) => collectStrings(v, into));
-  return into;
-}
-
 export function analyzeInteraction(state: MatiState): InteractionProfile {
-  const texts = collectStrings({ plan: state.plan, formative: state.formative, summative: state.summative }).filter((t) => !/^\d+(\.\d+)?$/.test(t));
-  const recent = texts.slice(-8);
-  const responseCount = recent.length;
-  const avg = recent.length ? recent.reduce((s, t) => s + t.length, 0) / recent.length : 0;
-  const numeric = recent.filter((t) => /\d|%|אחוז|מדד|יעד|כמות|מספר/.test(t)).length;
-  const narrative = recent.filter((t) => /כי|הרגש|קרה|שמתי לב|נראה לי|מצד|אבל|למדתי|הבנתי/.test(t) || t.length > 180).length;
-  const negative = recent.filter((t) => /קשה|מתסכל|לא עובד|נכשל|כישלון|עומס|מותשת|תקוע|בעיה|התנגדות|אין זמן/.test(t)).length;
-  const minimalTokens = recent.filter((t) => /^(כן|לא|בסדר|אוקיי|טוב|סבבה|אין|לא יודע[ה]?)$/i.test(t)).length;
+  const a = state.formative.answers;
+  const structuredValues: unknown[] = [
+    a.q1.goalAchievement, a.q1.goalsAnswered, a.q1.measuresDefined, a.q1.implementationPercent,
+    a.q2.planAdjustments, a.q2.strategies, a.q2.heterogeneity, a.q2.frequency,
+    a.q3.meetingRate, a.q3.meetingStructure, a.q3.observations, a.q3.depth,
+    a.q4.efficacy, a.q4.studentImpact, a.q4.incidentReduction, a.q4.targetStudents, a.q4.improvedStudents,
+    a.q5.tailoring, a.q5.assessmentTools, a.q5.adaptations, a.q5.plannedHours, a.q5.actualHours,
+    a.q6.teamFeedbackAsked, a.q6.feedbackTone, a.q6.managerPlanned, a.q6.managerActual, a.q6.managerCommitment,
+    a.q6.resourcesAllocated, a.q6.resourcesPercent, a.q6.newProfessionalLanguage,
+    a.q7.independence, a.q7.dataBasedRecommendations, a.q7.continuesWithoutDependency,
+    a.q9.goals, a.q9.implementation, a.q9.teacherChange, a.q9.studentImpact, a.q9.sustainability,
+  ];
+  const openValues: unknown[] = [
+    a.q1.evidence, a.q2.evidence, a.q3.notes, a.q4.evidence, a.q5.other, a.q5.reflection,
+    a.q6.feedback1, a.q6.feedback2, a.q6.feedback3, a.q6.resourcesRequested, a.q6.shortages,
+    a.q6.culturePositiveSign, a.q6.cultureStagnationSign, a.q6.teacherRoomTraining, a.q6.aidesTraining,
+    a.q7.evidence, a.q8.workedBetter, a.q8.didNotWork, a.q8.success1, a.q8.success2, a.q8.success3,
+    a.q8.centralMistake, a.q8.flexibilityReflection, a.q8.next1, a.q8.next2, a.q8.next3,
+  ];
+  const structuredCount = structuredValues.filter(hasValue).length;
+  const openCount = openValues.filter(hasValue).length;
   let style: InteractionProfile['style'] = 'unknown';
-  if (responseCount >= 2) { if (numeric >= 2 && narrative === 0) style = 'analytic'; else if (narrative >= 2 && numeric === 0) style = 'intuitive'; else style = 'mixed'; }
-  return { style, pace: avg > 170 ? 'deep' : avg > 0 && avg < 55 ? 'compact' : 'balanced', tone: negative >= 2 ? 'soft' : 'direct', minimalism: minimalTokens >= 2, overload: negative >= 3, responseCount };
+  if (structuredCount && openCount) style = 'mixed';
+  else if (structuredCount >= 2) style = 'analytic';
+  else if (openCount >= 2) style = 'intuitive';
+  return {
+    style,
+    pace: 'balanced',
+    tone: 'direct',
+    minimalism: false,
+    overload: false,
+    responseCount: structuredCount + openCount,
+  };
 }
 
 export function implementationStatus(state: MatiState) {

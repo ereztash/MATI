@@ -1,0 +1,54 @@
+{
+  "version": 6,
+  "principle": "Representation Serves Practice",
+  "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
+  "invariants": [
+    { "id": "R1_NO_DUPLICATE_SEMANTIC_WORK", "class": "representation", "rule": "A fact already collected may not be required again unless the later representation has a distinct temporal or professional meaning that is explicitly stated." },
+    { "id": "R2_PURPOSE_LIMIT_FREE_TEXT", "class": "representation", "rule": "Free reflection text may serve reflection and user-visible professional derivation, but may not be semantically mined to infer fatigue, emotion, personality, minimalism or UX state." },
+    { "id": "R3_DERIVATION_RETURNS_VALUE", "class": "representation", "rule": "A derived representation must return visible professional value and disclose that it is derived rather than directly observed." },
+    { "id": "R4_NO_UNUSED_TELEMETRY", "class": "representation", "rule": "MATI may collect UX telemetry only when a current, declared decision uses it. Signals kept merely because they may be useful later must not be collected in the pilot." },
+    { "id": "R5_NO_UNUSED_DERIVED_STATE", "class": "representation", "rule": "Derived state may exist only when a current user-visible decision or governed export consumes it. Internal snapshots, classifications or cached projections without a current consumer must be removed." },
+    { "id": "C1_SINGLE_RULE_SOURCE", "class": "coherence", "rule": "Each professional gate has one declared source of truth; UI copy, code and documentation must not redefine it independently." },
+    { "id": "C2_SAME_TERM_SAME_MEANING", "class": "coherence", "rule": "The same term must keep the same semantic meaning across stages. Distinct temporal meanings must be named as distinct states rather than silently reused." },
+    { "id": "C3_NO_EVIDENCE_IS_NOT_EVIDENCE", "class": "coherence", "rule": "Absence of evidence may be represented as missing, pending or unresolved; it may not be described as an observed professional finding." },
+    { "id": "C4_PRIVACY_CLAIMS_MATCH_DATA_FLOW", "class": "coherence", "rule": "Claims about local storage, export and organizational projection must match the actual data path and distinguish automatic transmission from explicit user export." },
+    { "id": "C5_DETECTION_IS_NOT_AUTHORITY", "class": "coherence", "rule": "Detection, interpretation, recommendation, authorization, execution and propagation are distinct states. An auditor finding does not authorize a professional change." },
+    { "id": "C6_DOCS_COPY_CODE_ALIGN", "class": "coherence", "rule": "README, contracts, user-facing guidance and implementation must describe the same currently deployed behavior." },
+    { "id": "C7_NO_SILENT_CLASSIFICATION", "class": "coherence", "rule": "When the professional model explicitly permits an unresolved state, UI and support layers must preserve that unresolved state rather than substituting a convenient default." },
+    { "id": "C8_CANONICAL_STATE_INTERPRETATION", "class": "coherence", "rule": "The same persisted MATI snapshot must hydrate to the same semantic state in every layer. Support surfaces may not maintain independent parsers or shallower merge rules." }
+  ],
+  "sourcesOfTruth": [
+    { "concept": "stage1_gate", "source": "lib/ux-structural-contract.json#stage1-plan" },
+    { "concept": "stage2_partial_gate", "source": "lib/ux-structural-contract.json#stage2-formative" },
+    { "concept": "stage3_question_units", "source": "lib/ux-structural-contract.json#stage3-summative" },
+    { "concept": "stage_calendar_classification", "source": "lib/stages.ts#stageFromDate" },
+    { "concept": "persisted_state_interpretation", "source": "lib/state-hydration.ts" },
+    { "concept": "organizational_projection", "source": "docs/organizational-signal-contract.md" },
+    { "concept": "organizational_signal_schema", "source": "lib/organizational-signals.ts" },
+    { "concept": "context_adaptation", "source": "lib/context-engine.ts" }
+  ],
+  "reviewedCrossStageRepresentations": [
+    { "earlier": "plan.smartGoal", "later": "formative.context.centralGoals", "earlierMeaning": "desired change at planning time", "laterMeaning": "goal snapshot used to contextualize the formative checkpoint", "status": "DISTINCT_TEMPORAL_MEANING" },
+    { "earlier": "plan.timeframe", "later": "formative.context.period", "earlierMeaning": "rough implementation horizon", "laterMeaning": "period covered by the current formative evaluation", "status": "DISTINCT_TEMPORAL_MEANING" },
+    { "earlier": "plan.independence", "later": "formative.answers.q7.independence", "earlierMeaning": "desired independence before implementation", "laterMeaning": "observed/reported independence at evaluation time", "status": "DISTINCT_TEMPORAL_MEANING" },
+    { "earlier": "plan.managers", "later": "formative.answers.q6.managerCommitment", "earlierMeaning": "manager involvement required by the plan", "laterMeaning": "reported manager commitment during implementation", "status": "DISTINCT_TEMPORAL_MEANING" }
+  ],
+  "inquiryOnlyHeuristics": [
+    { "id": "GOAL_RESULT_GAP", "source": "lib/stages.ts#hasLargeGoalResultGap", "authority": "INQUIRY_ONLY", "mayGate": false, "mayScore": false, "mayAssertCausality": false },
+    { "id": "IMPLEMENTATION_INDEPENDENCE_GAP", "source": "lib/context-engine.ts#findContradictions", "authority": "INQUIRY_ONLY", "mayGate": false, "mayScore": false, "mayAssertCausality": false },
+    { "id": "MEETING_DEPTH_GAP", "source": "lib/context-engine.ts#findContradictions", "authority": "INQUIRY_ONLY", "mayGate": false, "mayScore": false, "mayAssertCausality": false },
+    { "id": "MANAGER_RESOURCE_GAP", "source": "lib/context-engine.ts#findContradictions", "authority": "INQUIRY_ONLY", "mayGate": false, "mayScore": false, "mayAssertCausality": false },
+    { "id": "INDEPENDENCE_SUSTAINABILITY_GAP", "source": "lib/context-engine.ts#findContradictions", "authority": "INQUIRY_ONLY", "mayGate": false, "mayScore": false, "mayAssertCausality": false }
+  ],
+  "protectedProfessionalAreas": ["question wording", "dimension definitions", "scores and thresholds", "stage gates", "privacy authority", "organizational causal interpretation"],
+  "pendingAuthorityConflicts": [
+    {
+      "id": "DIMENSION_SCORE_WITHOUT_EVIDENCE",
+      "status": "PENDING_HUMAN_AUTHORITY",
+      "protectedArea": "scores and thresholds",
+      "conflict": "scoreDimensions floors every dimension at 2/5 even when its evidence array is empty. That unevidenced internal score can also participate in strongest/weakest ordering and downstream recommendations, while product copy states that missing evidence is not invented.",
+      "containment": "The conflict is registered and CI requires it to remain explicit. Do not reinterpret or change the approved score floor automatically. Until a domain decision resolves it, any claim derived from dimension ordering must be treated as provisional when the relevant evidence array is empty. A domain decision must determine whether to suppress unevidenced dimensions from ranking/display or change the scoring rule itself.",
+      "resolutionAuthority": "human product/domain decision"
+    }
+  ]
+}

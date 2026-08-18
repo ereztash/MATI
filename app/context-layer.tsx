@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { analyzeInteraction, emptyState, MatiState, stageFromDate, Stage } from '../lib/stages';
+import { emptyState, MatiState, stageFromDate } from '../lib/stages';
+import { readStoredMatiState } from '../lib/state-hydration';
 import {
   buildContextSnapshot,
   deriveCoachStrategy,
@@ -10,34 +11,7 @@ import {
   UsageContext,
 } from '../lib/context-engine';
 
-const STATE_KEY = 'mati-v2';
 const USAGE_KEY = 'mati-usage-v1';
-
-function hydrateState(raw: string | null): MatiState {
-  if (!raw) return emptyState;
-  try {
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: {
-          ...emptyState.formative.answers,
-          ...(source.formative?.answers ?? {}),
-        },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
-}
 
 function deviceFromWidth(width: number): DeviceClass {
   if (width < 720) return 'mobile';
@@ -48,26 +22,17 @@ function deviceFromWidth(width: number): DeviceClass {
 function readUsage(now = new Date()): UsageContext {
   const width = typeof window === 'undefined' ? undefined : window.innerWidth;
   const device = width ? deviceFromWidth(width) : 'unknown';
-  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
   let previous: Partial<UsageContext> = {};
   try { previous = JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}'); } catch { previous = {}; }
   return {
     sessionStartedAt: now.toISOString(),
     lastVisitAt: previous.lastVisitAt,
-    visitCount: Math.max(0, Number(previous.visitCount) || 0) + 1,
-    interactionCount: 0,
     device,
-    touch,
-    width,
   };
 }
 
-function persistUsage(usage: UsageContext, interactionCount = usage.interactionCount) {
-  localStorage.setItem(USAGE_KEY, JSON.stringify({
-    ...usage,
-    interactionCount,
-    lastVisitAt: new Date().toISOString(),
-  }));
+function persistUsage() {
+  localStorage.setItem(USAGE_KEY, JSON.stringify({ lastVisitAt: new Date().toISOString() }));
 }
 
 export default function ContextLayer() {
@@ -79,23 +44,20 @@ export default function ContextLayer() {
     const now = new Date();
     const initialUsage = readUsage(now);
     setUsage(initialUsage);
-    setState(hydrateState(localStorage.getItem(STATE_KEY)));
-    persistUsage(initialUsage);
+    setState(readStoredMatiState());
+    persistUsage();
 
-    let interactions = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
-      interactions += 1;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        setState(hydrateState(localStorage.getItem(STATE_KEY)));
-        setUsage((current) => current ? { ...current, interactionCount: interactions } : current);
+        setState(readStoredMatiState());
         setTick((v) => v + 1);
       }, 180);
     };
-    const onResize = () => setUsage((current) => current ? { ...current, width: window.innerWidth, device: deviceFromWidth(window.innerWidth) } : current);
+    const onResize = () => setUsage((current) => current ? { ...current, device: deviceFromWidth(window.innerWidth) } : current);
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') setUsage((current) => { if (current) persistUsage(current, interactions); return current; });
+      if (document.visibilityState === 'hidden') persistUsage();
     };
     window.addEventListener('input', refresh, true);
     window.addEventListener('change', refresh, true);
@@ -109,16 +71,16 @@ export default function ContextLayer() {
       window.removeEventListener('change', refresh, true);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
-      persistUsage(initialUsage, interactions);
+      persistUsage();
     };
   }, []);
 
   const model = useMemo(() => {
     if (!usage) return null;
     const automaticStage = stageFromDate();
-    const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
-    const profile = analyzeInteraction(state);
-    const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, profile, usage });
+    const activeStage = state.manualStage ?? automaticStage;
+    if (!activeStage) return null;
+    const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, usage });
     const strategy = deriveCoachStrategy(snapshot);
     return { snapshot, strategy };
   }, [state, usage, tick]);
@@ -153,7 +115,7 @@ export default function ContextLayer() {
       <details className="contextWhy">
         <summary>למה?</summary>
         <ul>{strategy.explanation.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        <small>שעה, מכשיר וקצב שימוש משפיעים רק בעדינות. הם אינם משמשים כאבחון או כציון מקצועי.</small>
+        <small>זמן, מכשיר ומשך הסשן משפיעים רק בעדינות. הם אינם משמשים כאבחון או כציון מקצועי.</small>
       </details>
     </aside>
   );
