@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "principle": "Representation Serves Practice",
   "telos": "Minimize work the instructor performs for the system; maximize work the system performs for professional practice without changing professional authority.",
   "invariants": [
@@ -17,6 +17,11 @@
       "id": "R3_DERIVATION_RETURNS_VALUE",
       "class": "representation",
       "rule": "A derived representation must return visible professional value and disclose that it is derived rather than directly observed."
+    },
+    {
+      "id": "R4_NO_UNUSED_TELEMETRY",
+      "class": "representation",
+      "rule": "MATI may collect UX telemetry only when a current, declared decision uses it. Signals kept merely because they may be useful later must not be collected in the pilot."
     },
     {
       "id": "C1_SINGLE_RULE_SOURCE",
