@@ -8,6 +8,7 @@
     "check:signals": "node scripts/check-organizational-signal-contract.mjs",
     "check:design": "node scripts/check-design-contract.mjs",
     "check:semantic-ux": "node scripts/check-semantic-ux-contract.mjs",
+    "check:coherence": "node scripts/check-system-coherence.mjs",
     "start": "next start"
   },
   "dependencies": {
