@@ -49,6 +49,7 @@ const requiredInvariants = [
   'C4_PRIVACY_CLAIMS_MATCH_DATA_FLOW',
   'C5_DETECTION_IS_NOT_AUTHORITY',
   'C6_DOCS_COPY_CODE_ALIGN',
+  'C7_NO_SILENT_CLASSIFICATION',
 ];
 const declared = new Set((contract.invariants ?? []).map((item) => item.id));
 for (const id of requiredInvariants) if (!declared.has(id)) issue('MISSING_INVARIANT', `System coherence contract is missing ${id}`);
@@ -116,6 +117,16 @@ if (!savePlanBody.includes('smartGoalLooksValid(state.plan.smartGoal)')) issue('
 for (const field of optionalStage1) {
   if (planReadyBody.includes(`plan.${field}`)) issue('OPTIONAL_FIELD_BECAME_GATE', `planReady silently made ${field} mandatory.`);
   if (savePlanBody.includes(`state.plan.${field}`)) issue('OPTIONAL_FIELD_BECAME_GATE', `savePlan silently made ${field} mandatory.`);
+}
+
+// C7: unresolved calendar gaps must remain unresolved in every support layer.
+for (const [name, source] of [['ExperienceShell', experienceShell], ['ContextLayer', contextLayer], ['WorkSessionLayer', workSession]]) {
+  if (/stageFromDate\([^)]*\)[^\n;]*\?\?\s*1/.test(source) || /automaticStage\s*\?\?\s*1/.test(source)) {
+    issue('SILENT_STAGE_CLASSIFICATION', `${name} silently defaults an unresolved calendar stage to Stage 1.`);
+  }
+}
+if (!experienceShell.includes('if (!activeStage) return') || !contextLayer.includes('if (!activeStage) return null') || !workSession.includes('return state.manualStage ?? stageFromDate();')) {
+  issue('UNRESOLVED_STAGE_PATH_DRIFT', 'Support layers must explicitly preserve the between-window unresolved stage until the instructor chooses.');
 }
 
 // C2/R1: repeated cross-stage concepts must be explicitly reviewed as distinct temporal meanings.
@@ -218,5 +229,5 @@ if (issues.length) {
 }
 
 console.log(`System coherence audit passed (${requiredInvariants.length} invariants, ${reviewed.length} cross-stage representations, ${heuristics.length} inquiry-only heuristics).`);
-console.log('Representation, source-of-truth, privacy, authority, identity, telemetry, data-path, aggregation and documentation boundaries are aligned.');
+console.log('Representation, source-of-truth, unresolved-state, privacy, authority, identity, telemetry, data-path, aggregation and documentation boundaries are aligned.');
 for (const item of warnings) console.log(`PENDING: ${item.message}`);
