@@ -122,8 +122,7 @@ export function extractOrganizationalSignals(state: MatiState): OrganizationalSi
   if (a.q4.studentImpact) {
     pushSignal(signals, {
       key: 'student_impact', stage: 2, value: a.q4.studentImpact,
-      confidence: a.q4.studentImpact === 'notMeasured' ? 'medium' : 'high',
-      operationalImpact: 'high',
+      confidence: 'high', operationalImpact: 'high',
     });
   }
 
