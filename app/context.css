@@ -1,0 +1,42 @@
+.contextRibbon {
+  width: min(1180px, calc(100% - 32px));
+  margin: 16px auto 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid rgba(31, 82, 129, .18);
+  border-radius: 18px;
+  background: rgba(247, 251, 255, .96);
+  box-shadow: 0 8px 24px rgba(27, 54, 82, .06);
+  color: #223648;
+}
+.contextRibbon.light { background: rgba(252, 250, 244, .97); border-color: rgba(156, 119, 44, .22); }
+.contextRibbon.deep { background: rgba(244, 251, 249, .97); border-color: rgba(39, 124, 110, .22); }
+.contextRibbonMain { display: grid; gap: 4px; }
+.contextEyebrow { font-size: .78rem; font-weight: 800; color: #496982; }
+.contextRibbonMain strong { font-size: .98rem; line-height: 1.45; }
+.contextRibbonMain p { margin: 2px 0 0; color: #5d6f7c; line-height: 1.55; }
+.contextWhy { min-width: 180px; font-size: .82rem; }
+.contextWhy summary { cursor: pointer; font-weight: 800; color: #355b77; }
+.contextWhy ul { margin: 8px 0; padding-inline-start: 20px; }
+.contextWhy li { margin: 4px 0; line-height: 1.45; }
+.contextWhy small { display: block; max-width: 320px; color: #6f7d87; line-height: 1.45; }
+
+html[data-mati-density="compact"] .assessmentBody,
+html[data-mati-density="compact"] .formSection,
+html[data-mati-density="compact"] .contextPanel { gap: 12px; }
+html[data-mati-density="compact"] textarea { min-height: 88px; }
+html[data-mati-density="expanded"] .assessmentBody,
+html[data-mati-density="expanded"] .formSection { gap: 24px; }
+
+@media (max-width: 760px) {
+  .contextRibbon {
+    width: min(100% - 20px, 1180px);
+    grid-template-columns: 1fr;
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .contextWhy { min-width: 0; }
+}
