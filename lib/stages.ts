@@ -72,9 +72,7 @@ export function stageFromDate(date = new Date()): Stage | null {
 }
 
 export function smartGoalLooksValid(goal: string) {
-  const text = goal.trim();
-  if (text.length < 10) return false;
-  return text.split(/\s+/).filter(Boolean).length >= 2;
+  return Boolean(goal.trim());
 }
 
 export function planReady(plan: Plan) {
