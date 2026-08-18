@@ -6,7 +6,10 @@ import { emptyState, FormativeAnswers, MatiState, stage2SectionStarted, stageFro
 const STATE_KEY = 'mati-v2';
 const shortIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q5', 'q8', 'q9'];
 const fullIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
+const summativeGroupSizes = [2, 1, 1] as const;
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
+
+type WorkItem = { elements: HTMLElement[] };
 
 function readState(): MatiState {
   try {
@@ -47,19 +50,37 @@ function firstUsefulIndex(state: MatiState, stage: Stage, count: number) {
     const missing = ids.findIndex((id) => !stage2SectionStarted(state.formative, id));
     return missing >= 0 ? Math.min(missing, count - 1) : Math.max(0, count - 1);
   }
-  const values = [state.summative.achievement, state.summative.achievementMetric, state.summative.turningPoint, state.summative.nextYearChange];
-  const missing = values.findIndex((value) => !value.trim());
-  return missing >= 0 ? Math.min(missing, count - 1) : Math.max(0, count - 1);
+  if (!state.summative.achievement.trim() || !state.summative.achievementMetric.trim()) return 0;
+  if (!state.summative.turningPoint.trim()) return Math.min(1, count - 1);
+  if (!state.summative.nextYearChange.trim()) return Math.min(2, count - 1);
+  return Math.max(0, count - 1);
 }
 
-function candidatesFor(stage: Stage) {
-  if (stage === 1) return Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .formSection'));
-  if (stage === 2) return Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .assessmentSection'));
-  return Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .summativeStack > *'));
+function singleItems(elements: HTMLElement[]): WorkItem[] {
+  return elements.map((element) => ({ elements: [element] }));
 }
 
-function titleFor(element: HTMLElement, fallback: string) {
-  const heading = element.querySelector('h3, h2, label > span, .field > span');
+function workItemsFor(stage: Stage): WorkItem[] {
+  if (stage === 1) return singleItems(Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .formSection')));
+  if (stage === 2) return singleItems(Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .assessmentSection')));
+
+  const elements = Array.from(document.querySelectorAll<HTMLElement>('.view-work .workExperience .summativeStack > *'));
+  const groups: WorkItem[] = [];
+  let cursor = 0;
+  for (const size of summativeGroupSizes) {
+    const slice = elements.slice(cursor, cursor + size);
+    if (slice.length) groups.push({ elements: slice });
+    cursor += size;
+  }
+  while (cursor < elements.length) {
+    groups.push({ elements: [elements[cursor]] });
+    cursor += 1;
+  }
+  return groups;
+}
+
+function titleFor(item: WorkItem, fallback: string) {
+  const heading = item.elements[0]?.querySelector('h3, h2, label > span, .field > span');
   return heading?.textContent?.trim() || fallback;
 }
 
@@ -88,7 +109,7 @@ export default function WorkSessionLayer() {
       timer = setTimeout(() => {
         const state = readState();
         const nextStage = currentStage(state);
-        const candidates = candidatesFor(nextStage);
+        const candidates = workItemsFor(nextStage);
         if (!candidates.length) return;
         const key = `${nextStage}:${candidates.length}:${state.formative.route}`;
         setStage(nextStage);
@@ -111,19 +132,21 @@ export default function WorkSessionLayer() {
       window.removeEventListener('input', sync, true);
       window.removeEventListener('change', sync, true);
       document.documentElement.removeAttribute('data-work-session');
-      candidatesFor(stage).forEach((element) => { element.hidden = false; });
+      workItemsFor(stage).flatMap((item) => item.elements).forEach((element) => { element.hidden = false; });
     };
   }, [stage]);
 
   useEffect(() => {
-    const candidates = candidatesFor(stage);
+    const candidates = workItemsFor(stage);
     if (!candidates.length) return;
     const safeIndex = Math.max(0, Math.min(index, candidates.length - 1));
     document.documentElement.setAttribute('data-work-session', 'on');
-    candidates.forEach((element, candidateIndex) => { element.hidden = candidateIndex !== safeIndex; });
+    candidates.forEach((item, candidateIndex) => {
+      item.elements.forEach((element) => { element.hidden = candidateIndex !== safeIndex; });
+    });
     setCount(candidates.length);
     setTitle(titleFor(candidates[safeIndex], `חלק ${safeIndex + 1}`));
-    candidates[safeIndex].scrollIntoView({ block: 'start', behavior: 'smooth' });
+    candidates[safeIndex].elements[0]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [stage, index, initializedKey]);
 
   const progress = useMemo(() => count ? Math.round(((index + 1) / count) * 100) : 0, [count, index]);
