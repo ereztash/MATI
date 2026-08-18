@@ -48,26 +48,17 @@ function deviceFromWidth(width: number): DeviceClass {
 function readUsage(now = new Date()): UsageContext {
   const width = typeof window === 'undefined' ? undefined : window.innerWidth;
   const device = width ? deviceFromWidth(width) : 'unknown';
-  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
   let previous: Partial<UsageContext> = {};
   try { previous = JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}'); } catch { previous = {}; }
   return {
     sessionStartedAt: now.toISOString(),
     lastVisitAt: previous.lastVisitAt,
-    visitCount: Math.max(0, Number(previous.visitCount) || 0) + 1,
-    interactionCount: 0,
     device,
-    touch,
-    width,
   };
 }
 
-function persistUsage(usage: UsageContext, interactionCount = usage.interactionCount) {
-  localStorage.setItem(USAGE_KEY, JSON.stringify({
-    ...usage,
-    interactionCount,
-    lastVisitAt: new Date().toISOString(),
-  }));
+function persistUsage() {
+  localStorage.setItem(USAGE_KEY, JSON.stringify({ lastVisitAt: new Date().toISOString() }));
 }
 
 export default function ContextLayer() {
@@ -80,22 +71,19 @@ export default function ContextLayer() {
     const initialUsage = readUsage(now);
     setUsage(initialUsage);
     setState(hydrateState(localStorage.getItem(STATE_KEY)));
-    persistUsage(initialUsage);
+    persistUsage();
 
-    let interactions = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
-      interactions += 1;
       clearTimeout(timer);
       timer = setTimeout(() => {
         setState(hydrateState(localStorage.getItem(STATE_KEY)));
-        setUsage((current) => current ? { ...current, interactionCount: interactions } : current);
         setTick((v) => v + 1);
       }, 180);
     };
-    const onResize = () => setUsage((current) => current ? { ...current, width: window.innerWidth, device: deviceFromWidth(window.innerWidth) } : current);
+    const onResize = () => setUsage((current) => current ? { ...current, device: deviceFromWidth(window.innerWidth) } : current);
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') setUsage((current) => { if (current) persistUsage(current, interactions); return current; });
+      if (document.visibilityState === 'hidden') persistUsage();
     };
     window.addEventListener('input', refresh, true);
     window.addEventListener('change', refresh, true);
@@ -109,7 +97,7 @@ export default function ContextLayer() {
       window.removeEventListener('change', refresh, true);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
-      persistUsage(initialUsage, interactions);
+      persistUsage();
     };
   }, []);
 
@@ -153,7 +141,7 @@ export default function ContextLayer() {
       <details className="contextWhy">
         <summary>למה?</summary>
         <ul>{strategy.explanation.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        <small>שעה, מכשיר וקצב שימוש משפיעים רק בעדינות. הם אינם משמשים כאבחון או כציון מקצועי.</small>
+        <small>זמן, מכשיר ומשך הסשן משפיעים רק בעדינות. הם אינם משמשים כאבחון או כציון מקצועי.</small>
       </details>
     </aside>
   );
