@@ -12,36 +12,11 @@ import {
   stageFromDate,
   Stage,
 } from '../lib/stages';
+import { readStoredMatiState } from '../lib/state-hydration';
 import { calendarContext, greetingForDaypart } from '../lib/context-engine';
 
-const STATE_KEY = 'mati-v2';
 type View = 'home' | 'work' | 'insight' | 'journey';
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
-
-function hydrateState(): MatiState {
-  if (typeof window === 'undefined') return emptyState;
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return emptyState;
-    const source = JSON.parse(raw) as Partial<MatiState>;
-    return {
-      ...emptyState,
-      ...source,
-      plan: { ...emptyState.plan, ...(source.plan ?? {}) },
-      formative: {
-        ...emptyState.formative,
-        ...(source.formative ?? {}),
-        context: { ...emptyState.formative.context, ...(source.formative?.context ?? {}) },
-        answers: { ...emptyState.formative.answers, ...(source.formative?.answers ?? {}) },
-        post: { ...emptyState.formative.post, ...(source.formative?.post ?? {}) },
-      },
-      summative: { ...emptyState.summative, ...(source.summative ?? {}) },
-      history: Array.isArray(source.history) ? source.history : [],
-    };
-  } catch {
-    return emptyState;
-  }
-}
 
 function nextAction(state: MatiState, stage: Stage) {
   if (stage === 1) {
@@ -73,7 +48,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const [state, setState] = useState<MatiState>(emptyState);
   const [now, setNow] = useState<Date | null>(null);
 
-  const refresh = () => { setState(hydrateState()); setNow(new Date()); };
+  const refresh = () => { setState(readStoredMatiState()); setNow(new Date()); };
 
   useEffect(() => {
     refresh();
