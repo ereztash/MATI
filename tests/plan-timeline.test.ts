@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPersonalGantt, timelinePercent } from '../lib/plan-timeline';
+import { buildPersonalGantt, timelinePercent, toDateOnly } from '../lib/plan-timeline';
 import { emptyState, MatiState } from '../lib/stages';
 
 const savedPlan = (overrides: Partial<MatiState['plan']> = {}, savedAt = '2026-08-10T09:00:00.000Z') => ({
@@ -85,6 +85,59 @@ test('the now parameter threads through unchanged, for the UI\'s today-marker', 
   const now = new Date('2026-09-01T12:00:00.000Z');
   const gantt = buildPersonalGantt(stateWith(savedPlan()), now)!;
   assert.equal(gantt.now.getTime(), now.getTime());
+});
+
+test('cadence is read from timeframe and absent when the text has no recognizable phrase', () => {
+  const withCadence = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר–ינואר, אחת לשבועיים' })))!;
+  assert.deepEqual(withCadence.cadence, { intervalDays: 14, label: 'אחת לשבועיים' });
+
+  const withoutCadence = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר–ינואר' })))!;
+  assert.equal(withoutCadence.cadence, null);
+});
+
+test('only the three personal milestones carry an adjustable override; the fixed windows never do', () => {
+  const gantt = buildPersonalGantt(stateWith(savedPlan({
+    nextSmallStep: 'צעד', managers: 'מנהלים', flexibility: 'גמישות',
+  })))!;
+  const byKind = Object.fromEntries(gantt.milestones.map((m) => [m.kind, m]));
+  assert.equal(byKind.smallStep.adjustable?.overrideKey, 'smallStepDate');
+  assert.equal(byKind.managerTouch.adjustable?.overrideKey, 'managerTouchDate');
+  assert.equal(byKind.flexibilityCheck.adjustable?.overrideKey, 'flexibilityCheckDate');
+  assert.equal(byKind.formativeWindow.adjustable, undefined);
+  assert.equal(byKind.summativeWindow.adjustable, undefined);
+  // None of the three overrides is set in this fixture, so none reads as adjusted yet.
+  assert.equal(byKind.smallStep.adjustable?.adjusted, false);
+  assert.equal(byKind.managerTouch.adjustable?.adjusted, false);
+  assert.equal(byKind.flexibilityCheck.adjustable?.adjusted, false);
+});
+
+test('toDateOnly and the override parser round-trip to the exact same calendar day', () => {
+  const chosen = new Date(2026, 8, 1); // Sep 1 2026, local time
+  const stored = toDateOnly(chosen);
+  assert.equal(stored, '2026-09-01');
+  const gantt = buildPersonalGantt(stateWith(savedPlan({ nextSmallStep: 'צעד', smallStepDate: stored })))!;
+  const smallStep = gantt.milestones.find((m) => m.kind === 'smallStep')!;
+  assert.equal(smallStep.date.getFullYear(), 2026);
+  assert.equal(smallStep.date.getMonth(), 8); // September, 0-indexed
+  assert.equal(smallStep.date.getDate(), 1);
+  assert.equal(smallStep.adjustable?.adjusted, true);
+  // The default is still exposed (for a "reset to suggested" affordance) and differs from the chosen date.
+  assert.notEqual(smallStep.adjustable!.defaultDate.getTime(), smallStep.date.getTime());
+});
+
+test('a full ISO timestamp is rejected, not silently accepted — only the strict YYYY-MM-DD form is a valid override', () => {
+  const gantt = buildPersonalGantt(stateWith(savedPlan({ nextSmallStep: 'צעד', smallStepDate: '2026-09-01T00:00:00.000Z' })))!;
+  const smallStep = gantt.milestones.find((m) => m.kind === 'smallStep')!;
+  assert.equal(smallStep.adjustable?.adjusted, false);
+});
+
+test('an unparseable or blank override falls back to the computed default without crashing', () => {
+  const blank = buildPersonalGantt(stateWith(savedPlan({ managers: 'מנהלים', managerTouchDate: '' })))!;
+  const garbage = buildPersonalGantt(stateWith(savedPlan({ managers: 'מנהלים', managerTouchDate: 'not-a-date' })))!;
+  const baseline = buildPersonalGantt(stateWith(savedPlan({ managers: 'מנהלים' })))!;
+  const at = (g: typeof baseline) => g.milestones.find((m) => m.kind === 'managerTouch')!.date.getTime();
+  assert.equal(at(blank), at(baseline));
+  assert.equal(at(garbage), at(baseline));
 });
 
 test('timelinePercent is monotonic and clamped to 0–100', () => {

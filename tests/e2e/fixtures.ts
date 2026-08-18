@@ -10,6 +10,7 @@ export const savedPlan = {
   metric2: 'משוב מורים',
   timeframe: 'ספטמבר–ינואר',
   flexibility: '', managers: '', independence: '', nextSmallStep: '', identityFit: '', confidenceNeed: '',
+  smallStepDate: '', managerTouchDate: '', flexibilityCheckDate: '',
   savedAt: '2026-01-05T10:00:00.000Z',
 };
 

@@ -1,15 +1,28 @@
-import type { MatiState } from './stages';
+import type { MatiState, Plan } from './stages';
 import { planSaved } from './stages';
+import { extractCadenceDays, cadenceLabel } from './cadence';
 
 /**
  * Personalized Gantt derived from a saved Stage 1 plan.
  *
- * v1 adds no new schema fields on purpose: the start is when the plan was
- * committed (`plan.savedAt`), the end is the close of the same program year
- * the fixed macro Gantt already uses (see stageFromDate in stages.ts and
- * stageWindow in context-engine.ts), and every milestone is read from a
- * plan field that is already there. A field left blank simply produces no
- * milestone — nothing is guessed to fill a gap.
+ * The base timeline adds no new schema fields on purpose: the start is
+ * when the plan was committed (`plan.savedAt`), the end is the close of
+ * the same program year the fixed macro Gantt already uses (see
+ * stageFromDate in stages.ts and stageWindow in context-engine.ts), and
+ * every milestone is read from a plan field that is already there. A
+ * field left blank simply produces no milestone — nothing is guessed to
+ * fill a gap.
+ *
+ * The three personal point-milestones (not the two fixed calendar
+ * windows, which are an organizational fact, not a personal choice) are
+ * adjustable: `plan.smallStepDate`/`managerTouchDate`/`flexibilityCheckDate`
+ * hold an explicit ISO date once the mentor nudges the mark on the
+ * timeline, overriding the computed default. Empty/unparseable falls back
+ * to the default — this never blocks or invalidates the plan.
+ *
+ * `cadence` is read from `plan.timeframe` (see lib/cadence.ts) — a
+ * recurring pattern, not enumerated occurrence dates, since a weekly
+ * cadence over a ten-month span would be dozens of points on a 34px bar.
  */
 
 export type TimelineMilestoneKind =
@@ -19,6 +32,10 @@ export type TimelineMilestoneKind =
   | 'formativeWindow'
   | 'summativeWindow';
 
+// Extract<keyof Plan, ...> rather than a bare union: if these fields are ever
+// renamed on Plan, this (and everything that keys off it) fails to compile.
+export type PersonalMilestoneOverrideKey = Extract<keyof Plan, 'smallStepDate' | 'managerTouchDate' | 'flexibilityCheckDate'>;
+
 export type TimelineMilestone = {
   kind: TimelineMilestoneKind;
   label: string;
@@ -26,19 +43,48 @@ export type TimelineMilestone = {
   date: Date;
   /** Present only for the two fixed calendar windows, which are ranges rather than points. */
   rangeEnd?: Date;
+  /** Present only for the three personal point-milestones — the fixed windows are not adjustable. */
+  adjustable?: { defaultDate: Date; overrideKey: PersonalMilestoneOverrideKey; adjusted: boolean };
 };
+
+export type GanttCadence = { intervalDays: number; label: string };
 
 export type PersonalGantt = {
   start: Date;
   end: Date;
   now: Date;
   milestones: TimelineMilestone[];
+  cadence: GanttCadence | null;
 };
 
 const DAY_MS = 86_400_000;
 
-function addDays(date: Date, days: number) {
+export function addDays(date: Date, days: number) {
   return new Date(date.getTime() + Math.round(days) * DAY_MS);
+}
+
+/**
+ * Calendar-date-only string (YYYY-MM-DD) in local time, for the override
+ * fields. Deliberately not a full ISO timestamp: `new Date('2026-09-01')`
+ * parses as UTC midnight, which can render as the previous day once
+ * formatted back in a negative-UTC-offset local timezone — a full
+ * round-trip through this pair of functions never touches that parser at
+ * all, so the gotcha cannot occur regardless of where the app is used.
+ */
+export function toDateOnly(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** A valid override Date parsed from a strict YYYY-MM-DD string, or null when blank/anything else — falls back to the computed default either way. */
+function overrideDate(value: string): Date | null {
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  const parsed = new Date(Number(y), Number(m) - 1, Number(d));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function daysBetween(a: Date, b: Date) {
@@ -89,27 +135,36 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
   const milestones: TimelineMilestone[] = [];
 
   if (state.plan.nextSmallStep.trim()) {
+    const defaultDate = addDays(start, clamp(totalDays * 0.06, 7, 21));
+    const override = overrideDate(state.plan.smallStepDate);
     milestones.push({
       kind: 'smallStep',
       label: 'צעד קטן ראשון',
       detail: state.plan.nextSmallStep.trim(),
-      date: addDays(start, clamp(totalDays * 0.06, 7, 21)),
+      date: override ?? defaultDate,
+      adjustable: { defaultDate, overrideKey: 'smallStepDate', adjusted: Boolean(override) },
     });
   }
   if (state.plan.managers.trim()) {
+    const defaultDate = addDays(start, clamp(totalDays * 0.12, 10, 30));
+    const override = overrideDate(state.plan.managerTouchDate);
     milestones.push({
       kind: 'managerTouch',
       label: 'שיחת מנהלים',
       detail: state.plan.managers.trim(),
-      date: addDays(start, clamp(totalDays * 0.12, 10, 30)),
+      date: override ?? defaultDate,
+      adjustable: { defaultDate, overrideKey: 'managerTouchDate', adjusted: Boolean(override) },
     });
   }
   if (state.plan.flexibility.trim()) {
+    const defaultDate = addDays(start, totalDays * 0.5);
+    const override = overrideDate(state.plan.flexibilityCheckDate);
     milestones.push({
       kind: 'flexibilityCheck',
       label: 'בדיקת גמישות',
       detail: state.plan.flexibility.trim(),
-      date: addDays(start, totalDays * 0.5),
+      date: override ?? defaultDate,
+      adjustable: { defaultDate, overrideKey: 'flexibilityCheckDate', adjusted: Boolean(override) },
     });
   }
 
@@ -119,7 +174,11 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
   milestones.push({ kind: 'summativeWindow', label: 'הערכה מסכמת', detail: 'חלון הגאנט הקבוע להערכה המסכמת.', date: summative.start, rangeEnd: summative.end });
 
   milestones.sort((a, b) => a.date.getTime() - b.date.getTime());
-  return { start, end, now, milestones };
+
+  const cadenceDays = extractCadenceDays(state.plan.timeframe);
+  const cadence: GanttCadence | null = cadenceDays ? { intervalDays: cadenceDays, label: cadenceLabel(cadenceDays) } : null;
+
+  return { start, end, now, milestones, cadence };
 }
 
 /** Position of a date along [start,end] as 0–100, clamped so an out-of-range date cannot overflow the track. */

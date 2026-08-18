@@ -9,7 +9,7 @@ import {
 } from '../lib/stages';
 import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
 import { evaluateSmartGoal } from '../lib/smart-criteria';
-import { buildPersonalGantt, timelinePercent } from '../lib/plan-timeline';
+import { addDays, buildPersonalGantt, timelinePercent, toDateOnly, TimelineMilestone } from '../lib/plan-timeline';
 
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
@@ -92,7 +92,7 @@ function PlanMode({ state, updatePlan, savePlan, dimensions, setState }: { state
     <FormSection number="3" title="מה צריך לקרות מסביב כדי שזה יעבוד" tone="gold"><Field label="מסגרת זמן גסה" value={state.plan.timeframe} onChange={(v) => updatePlan('timeframe', v)} placeholder="ספטמבר–ינואר, אחת לשבועיים" /><Field label="איפה נדרשת גמישות?" value={state.plan.flexibility} onChange={(v) => updatePlan('flexibility', v)} placeholder="מה עשוי להשתנות בלי לשבור את המטרה?" /><Field label="איזו מעורבות מנהלים נדרשת?" value={state.plan.managers} onChange={(v) => updatePlan('managers', v)} placeholder="החלטות, משאבים, זמן, גיבוי" /><Field label="איך תיראה עצמאות של המודרך?" value={state.plan.independence} onChange={(v) => updatePlan('independence', v)} placeholder="מה הוא יעשה גם כשאת לא בחדר?" /></FormSection>
     <div className="actions"><button className="primary" onClick={savePlan}><span>אשרי ושמרי את תוכנית העבודה</span><b aria-hidden="true">←</b></button></div>
     {planSaved(state) && <Mirror dimensions={dimensions} state={state}><div className="coachingBlock"><span className="coachingLabel">צעד קטן שאפשר לעשות עכשיו</span><p>{state.plan.nextSmallStep || suggestion}</p>{!state.plan.nextSmallStep && <button className="secondary" onClick={() => setState((s) => ({ ...s, plan: { ...s.plan, nextSmallStep: suggestion } }))}>אמצי את הצעד לתוכנית</button>}<div className="socraticGrid"><TextArea label="איך ההצעה מתיישבת עם האני המקצועי שלך?" value={state.plan.identityFit} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, identityFit: v } }))} rows={3} /><TextArea label="מה ייתן לך ביטחון לבצע את הצעד הזה?" value={state.plan.confidenceNeed} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, confidenceNeed: v } }))} rows={3} /></div></div></Mirror>}
-    {planSaved(state) && <PersonalGanttView state={state} />}
+    {planSaved(state) && <PersonalGanttView state={state} setState={setState} />}
   </>;
 }
 
@@ -150,23 +150,65 @@ function SmartChecklist({ plan }: { plan: MatiState['plan'] }) {
   return <div className="smartChecklist"><ul>{evaluation.criteria.map((c) => <li key={c.letter} className={c.met ? 'smartMet' : 'smartMissing'}><b aria-hidden="true">{c.met ? '✓' : '○'}</b><span><strong>{c.label}</strong>{!c.met && ` — ${c.hint}`}</span></li>)}</ul><small className="smartReflect">{evaluation.achievableReflection}</small></div>;
 }
 
-function PersonalGanttView({ state }: { state: MatiState }) {
+function PersonalGanttView({ state, setState }: { state: MatiState; setState: React.Dispatch<React.SetStateAction<MatiState>> }) {
   const gantt = useMemo(() => buildPersonalGantt(state), [state]);
   if (!gantt) return null;
-  const { start, end, now, milestones } = gantt;
+  const { start, end, now, milestones, cadence } = gantt;
   const todayPct = timelinePercent(now, start, end);
   const fmt = (d: Date) => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
   const bands = milestones.filter((m) => m.rangeEnd);
   const marks = milestones.filter((m) => !m.rangeEnd);
-  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה שנשאר ריק פשוט לא מקבל נקודת דרך — שום תאריך לא מומצא.</p></div>
-    <div className="ganttTrack" role="img" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}, עם ${milestones.length} נקודות דרך`}>
+  // A repeating texture, not enumerated ticks: a weekly cadence over a
+  // ten-month span is dozens of occurrences — too many points for a 34px
+  // bar, and the gap between them would barely be perceptible at this
+  // scale either way. The texture is a fixed, qualitative "recurs here"
+  // signal; the exact interval is stated in the text note below instead
+  // of encoded in pixel spacing that would be misleading at this size.
+
+  // The bar's dots stay purely decorative (aria-hidden, pointer-events:none
+  // via CSS): they sit inside an already-tight 34px track next to several
+  // overlapping absolutely-positioned siblings, and the visible dot itself
+  // is a ::before pseudo-element with no real hit area of its own. The
+  // legend rows below are real DOM, already roomy, and already the
+  // accessible-equivalent listing for the whole chart — so that is where
+  // the actual interaction lives.
+  function adjustMilestone(m: TimelineMilestone, deltaDays: number) {
+    if (!m.adjustable) return;
+    const next = toDateOnly(addDays(m.date, deltaDays));
+    setState((s) => ({ ...s, plan: { ...s.plan, [m.adjustable!.overrideKey]: next } }));
+  }
+  function resetMilestone(m: TimelineMilestone) {
+    if (!m.adjustable) return;
+    setState((s) => ({ ...s, plan: { ...s.plan, [m.adjustable!.overrideKey]: '' } }));
+  }
+
+  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה שנשאר ריק פשוט לא מקבל נקודת דרך — שום תאריך לא מומצא. אפשר לפתוח כל שורה למטה כדי לכוונן את התאריך שלה.</p></div>
+    <div className="ganttTrack" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}${cadence ? `, קצב מפגשים שזוהה: ${cadence.label}` : ''}`}>
       <div className="ganttBar">
-        {bands.map((m) => <div key={m.kind} className="ganttBand" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} title={`${m.label}: ${fmt(m.date)}–${fmt(m.rangeEnd!)}`} />)}
-        {marks.map((m) => <span key={m.kind} className="ganttMark" style={{ right: `${timelinePercent(m.date, start, end)}%` }} title={`${m.label}: ${fmt(m.date)}`} />)}
-        <div className="ganttToday" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>
+        {cadence && <div className="ganttCadence" aria-hidden="true" />}
+        {bands.map((m) => <div key={m.kind} className="ganttBand" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} />)}
+        {marks.map((m) => <span key={m.kind} className="ganttMark" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%` }} />)}
+        <div className="ganttToday" aria-hidden="true" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>
       </div>
-      <div className="ganttAxis"><span>{fmt(start)}</span><span>{fmt(end)}</span></div>
+      <div className="ganttAxis" aria-hidden="true"><span>{fmt(start)}</span><span>{fmt(end)}</span></div>
     </div>
-    <ul className="ganttLegend">{milestones.map((m) => <li key={m.kind}><b aria-hidden="true" className={m.rangeEnd ? 'ganttDot band' : 'ganttDot'} /><span><strong>{m.label}</strong> · {fmt(m.date)}{m.rangeEnd ? `–${fmt(m.rangeEnd)}` : ''}</span><small>{m.detail}</small></li>)}</ul>
+    {cadence && <p className="ganttCadenceNote">זוהה קצב מפגשים — <strong>{cadence.label}</strong> — מתוך "מסגרת זמן" למעלה. אם זה לא מדויק, אפשר פשוט להתעלם; שום דבר לא נשמר בגלל זה.</p>}
+    <ul className="ganttLegend">{milestones.map((m) => {
+      const row = <span className="ganttLegendRow"><b aria-hidden="true" className={m.rangeEnd ? 'ganttDot band' : 'ganttDot'} /><span><strong>{m.label}</strong> · {fmt(m.date)}{m.rangeEnd ? `–${fmt(m.rangeEnd)}` : ''}</span><small>{m.detail}</small></span>;
+      if (!m.adjustable) return <li key={m.kind}>{row}</li>;
+      const adjustable = m.adjustable;
+      return <li key={m.kind}><details className="ganttLegendAdjust"><summary>{row}</summary>
+        <div className="ganttAdjustPanel">
+          <div className="ganttAdjustRow">
+            <button type="button" onClick={() => adjustMilestone(m, -7)}>שבוע קודם</button>
+            <button type="button" onClick={() => adjustMilestone(m, -1)}>יום קודם</button>
+            <span>{fmt(m.date)}</span>
+            <button type="button" onClick={() => adjustMilestone(m, 1)}>יום הבא</button>
+            <button type="button" onClick={() => adjustMilestone(m, 7)}>שבוע הבא</button>
+          </div>
+          {adjustable.adjusted && <button type="button" className="textButton ganttReset" onClick={() => resetMilestone(m)}>איפוס להצעה ({fmt(adjustable.defaultDate)})</button>}
+        </div>
+      </details></li>;
+    })}</ul>
   </section>;
 }

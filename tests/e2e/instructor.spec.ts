@@ -119,3 +119,34 @@ test('stage 2 stays locked until a plan is actually saved', async ({ page }) => 
   await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
   await expect(page.locator('.view-work .assessmentSection')).toHaveCount(0);
 });
+
+test('adjusting a personal-Gantt milestone never clears savedAt, and reset returns to the suggested date', async ({ page }) => {
+  // Regression: updatePlan() always clears savedAt (that is correct for a
+  // real plan edit — it un-saves a plan whose substance changed). Reusing
+  // it for a Gantt date nudge would make planSaved() go false and the
+  // entire Gantt/Mirror section — including the control just clicked —
+  // vanish on the very first adjustment. The nudge must go through a
+  // setter that leaves savedAt untouched.
+  await seed(page, STORAGE_KEY, {
+    plan: { ...savedPlan, nextSmallStep: 'לשוחח עם מורה אחת השבוע', timeframe: 'ספטמבר–ינואר, אחת לשבועיים' },
+    history: [],
+  });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  const row = page.locator('.ganttLegendAdjust').first();
+  await expect(row).toBeVisible();
+  await row.locator('summary').click();
+  await row.locator('button', { hasText: 'יום הבא' }).click();
+
+  await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBe(savedPlan.savedAt);
+  await expect.poll(async () => (await readStored(page)).plan?.smallStepDate).not.toBe('');
+  // The Gantt section itself must still be there — this is what a savedAt
+  // regression would actually break, not just the stored field.
+  await expect(page.locator('.personalGantt')).toBeVisible();
+  // The cadence phrase in the seeded timeframe should have been picked up too.
+  await expect(page.locator('.ganttCadenceNote')).toContainText('אחת לשבועיים');
+
+  await row.locator('.ganttReset').click();
+  await expect.poll(async () => (await readStored(page)).plan?.smallStepDate).toBe('');
+});

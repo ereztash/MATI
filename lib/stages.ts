@@ -15,6 +15,16 @@ export type Plan = {
   nextSmallStep: string;
   identityFit: string;
   confidenceNeed: string;
+  /**
+   * Personal-Gantt date overrides: empty means "use the computed default
+   * from buildPersonalGantt"; a non-empty ISO string is a date the mentor
+   * chose herself by adjusting the mark on the timeline. Optional, and
+   * never part of planReady/the save gate — a blank timeline is still a
+   * complete plan.
+   */
+  smallStepDate: string;
+  managerTouchDate: string;
+  flexibilityCheckDate: string;
   savedAt?: string;
 };
 
@@ -57,7 +67,7 @@ const emptyAnswers: FormativeAnswers = {
 };
 
 export const emptyState: MatiState = {
-  plan: { audience: '', smartGoal: '', metric1: '', metric2: '', timeframe: '', flexibility: '', managers: '', independence: '', nextSmallStep: '', identityFit: '', confidenceNeed: '' },
+  plan: { audience: '', smartGoal: '', metric1: '', metric2: '', timeframe: '', flexibility: '', managers: '', independence: '', nextSmallStep: '', identityFit: '', confidenceNeed: '', smallStepDate: '', managerTouchDate: '', flexibilityCheckDate: '' },
   formative: { route: 'short', context: { instructorName: '', framework: '', period: '', menteeCount: '', centralGoals: '' }, answers: emptyAnswers, post: { oneThing: '', feeling: '', nextCheck: '' } },
   summative: { achievement: '', achievementMetric: '', turningPoint: '', nextYearChange: '' },
   history: [],
