@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { analyzeInteraction, emptyState, MatiState, stageFromDate } from '../lib/stages';
+import { emptyState, MatiState, stageFromDate } from '../lib/stages';
 import { readStoredMatiState } from '../lib/state-hydration';
 import {
   buildContextSnapshot,
@@ -80,8 +80,7 @@ export default function ContextLayer() {
     const automaticStage = stageFromDate();
     const activeStage = state.manualStage ?? automaticStage;
     if (!activeStage) return null;
-    const profile = analyzeInteraction(state);
-    const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, profile, usage });
+    const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, usage });
     const strategy = deriveCoachStrategy(snapshot);
     return { snapshot, strategy };
   }, [state, usage, tick]);
