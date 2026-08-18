@@ -23,31 +23,53 @@ export interface OrganizationalPatternSummary {
   classification: ReturnType<typeof classifySystemicPattern>;
 }
 
-export function createOrganizationalPack(args: {
-  contributorId: string;
-  contextId: string;
-  periodId: string;
-  signals: OrganizationalSignal[];
-}): OrganizationalPack {
+const TOP_LEVEL_KEYS = ['schema', 'exportedAt', 'contributorId', 'contextId', 'periodId', 'signals'].sort();
+const SIGNAL_KEYS = ['key', 'stage', 'value', 'confidence', 'projection', 'operationalImpact'].sort();
+const SIGNAL_KEY_SET = new Set<OrganizationalSignalKey>([
+  'implementation_rate', 'goal_attainment', 'meeting_execution', 'implementation_depth', 'student_impact',
+  'student_improvement_rate', 'manager_meeting_rate', 'manager_commitment', 'resource_allocation',
+  'resource_allocation_rate', 'teacher_independence', 'sustainability', 'team_feedback_presence',
+]);
+
+function exactKeys(value: Record<string, unknown>, expected: string[]) {
+  const actual = Object.keys(value).sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+export function createOrganizationalPack(args: { contributorId: string; contextId: string; periodId: string; signals: OrganizationalSignal[] }): OrganizationalPack {
   return {
     schema: ORGANIZATIONAL_PACK_SCHEMA,
     exportedAt: new Date().toISOString(),
     contributorId: args.contributorId.trim(),
     contextId: args.contextId.trim(),
     periodId: args.periodId.trim(),
-    signals: args.signals.map((signal) => ({ ...signal })),
+    signals: args.signals.map((signal) => ({
+      key: signal.key,
+      stage: signal.stage,
+      value: signal.value,
+      confidence: signal.confidence,
+      projection: 'aggregate_only',
+      operationalImpact: signal.operationalImpact,
+    })),
   };
 }
 
 export function validateOrganizationalPack(input: unknown): input is OrganizationalPack {
-  if (!input || typeof input !== 'object') return false;
-  const pack = input as Partial<OrganizationalPack>;
-  if (pack.schema !== ORGANIZATIONAL_PACK_SCHEMA) return false;
-  if (!pack.contributorId || !pack.contextId || !pack.periodId || !Array.isArray(pack.signals)) return false;
-  return pack.signals.every((signal) => {
-    if (!signal || typeof signal !== 'object') return false;
-    const s = signal as Partial<OrganizationalSignal>;
-    return typeof s.key === 'string' &&
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const raw = input as Record<string, unknown>;
+  if (!exactKeys(raw, TOP_LEVEL_KEYS)) return false;
+  if (raw.schema !== ORGANIZATIONAL_PACK_SCHEMA) return false;
+  if (typeof raw.exportedAt !== 'string' || !Number.isFinite(Date.parse(raw.exportedAt))) return false;
+  if (typeof raw.contributorId !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(raw.contributorId)) return false;
+  if (typeof raw.contextId !== 'string' || !/^[A-Za-z0-9_-]{3,24}$/.test(raw.contextId)) return false;
+  if (typeof raw.periodId !== 'string' || !/^\d{4}-\d{2}$/.test(raw.periodId)) return false;
+  if (!Array.isArray(raw.signals) || raw.signals.length > 30) return false;
+
+  return raw.signals.every((signal) => {
+    if (!signal || typeof signal !== 'object' || Array.isArray(signal)) return false;
+    const s = signal as Record<string, unknown>;
+    if (!exactKeys(s, SIGNAL_KEYS)) return false;
+    return typeof s.key === 'string' && SIGNAL_KEY_SET.has(s.key as OrganizationalSignalKey) &&
       (s.stage === 1 || s.stage === 2 || s.stage === 3) &&
       (typeof s.value === 'string' || typeof s.value === 'number' || typeof s.value === 'boolean') &&
       (s.confidence === 'high' || s.confidence === 'medium') &&
@@ -60,10 +82,7 @@ export function summarizeOrganizationalPacks(packs: OrganizationalPack[]): Organ
   const keys = [...new Set(packs.flatMap((pack) => pack.signals.map((signal) => signal.key)))];
 
   return keys.map((key) => {
-    const rows = packs.flatMap((pack) => pack.signals
-      .filter((signal) => signal.key === key)
-      .map((signal) => ({ pack, signal, concern: signalConcern(signal) })));
-
+    const rows = packs.flatMap((pack) => pack.signals.filter((signal) => signal.key === key).map((signal) => ({ pack, signal, concern: signalConcern(signal) })));
     const classifiable = rows.filter((row) => row.concern !== null);
     const observations = classifiable.map(({ pack, signal, concern }) => ({
       key,
