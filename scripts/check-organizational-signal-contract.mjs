@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const file = path.join(process.cwd(), 'lib', 'organizational-signals.ts');
-const source = fs.readFileSync(file, 'utf8');
+const signalFile = path.join(process.cwd(), 'lib', 'organizational-signals.ts');
+const source = fs.readFileSync(signalFile, 'utf8');
 
 function stripComments(text) {
   return text
@@ -48,6 +48,25 @@ if (!source.includes("mayAssertCausality: false")) {
 
 if (!source.includes("projection: 'aggregate_only'")) {
   throw new Error('Signals must be aggregate-only by construction.');
+}
+
+const layerFile = path.join(process.cwd(), 'app', 'organizational-signal-layer.tsx');
+if (fs.existsSync(layerFile)) {
+  const layer = stripComments(fs.readFileSync(layerFile, 'utf8'));
+  const snapshotStart = layer.indexOf('localStorage.setItem(SIGNAL_SNAPSHOT_KEY');
+  const snapshotEnd = layer.indexOf('} catch', snapshotStart);
+  if (snapshotStart < 0 || snapshotEnd < 0) {
+    throw new Error('Could not locate local organizational signal snapshot boundary.');
+  }
+  const snapshot = layer.slice(snapshotStart, snapshotEnd);
+  if (!snapshot.includes('signals')) {
+    throw new Error('Organizational snapshot must contain the sanitized signals array.');
+  }
+  const forbiddenSnapshotFields = ['state,', 'source,', 'instructorName', 'framework', 'reflection', 'evidence', 'notes', 'shortages'];
+  const snapshotLeaks = forbiddenSnapshotFields.filter((field) => snapshot.includes(field));
+  if (snapshotLeaks.length) {
+    throw new Error(`Private/raw state entered organizational snapshot: ${snapshotLeaks.join(', ')}`);
+  }
 }
 
 console.log('Organizational signal contract check passed.');
