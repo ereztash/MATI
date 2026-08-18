@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { analyzeInteraction, emptyState, MatiState, stageFromDate, Stage } from '../lib/stages';
+import { analyzeInteraction, emptyState, MatiState, stageFromDate } from '../lib/stages';
 import {
   buildContextSnapshot,
   deriveCoachStrategy,
@@ -104,7 +104,8 @@ export default function ContextLayer() {
   const model = useMemo(() => {
     if (!usage) return null;
     const automaticStage = stageFromDate();
-    const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
+    const activeStage = state.manualStage ?? automaticStage;
+    if (!activeStage) return null;
     const profile = analyzeInteraction(state);
     const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, profile, usage });
     const strategy = deriveCoachStrategy(snapshot);
