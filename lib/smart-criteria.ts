@@ -83,9 +83,23 @@ function sharesWord(a: string[], b: string[]) {
 
 export type SmartLetter = 'specific' | 'measurable' | 'relevant' | 'timeBound';
 
+/**
+ * `pending` is not a softer `missing` — it is a different fact.
+ *
+ * Measurable and Time-bound are answered by the metric and timeframe fields,
+ * which sit in later parts of the Stage 1 form. Reported as misses they read
+ * as errors the mentor must fix in the goal sentence, on a screen where those
+ * fields do not exist yet — which is precisely the trap that made a first-time
+ * user believe the goal field was blocking her. An unreached field is not a
+ * mistake, and marking it as one sends her looking for a problem that is not there.
+ */
+export type SmartCriterionStatus = 'met' | 'missing' | 'pending';
+
 export type SmartCriterion = {
   letter: SmartLetter;
   label: string;
+  status: SmartCriterionStatus;
+  /** Convenience mirror of `status === 'met'`. */
   met: boolean;
   hint: string;
 };
@@ -119,7 +133,7 @@ export function evaluateSmartGoal(plan: Plan): SmartEvaluation {
   const measurableMet = Boolean(plan.metric1.trim() && plan.metric2.trim());
   const measurableHint = measurableMet
     ? 'שני מדדי הצלחה מוגדרים למטה.'
-    : 'שני מדדי ההצלחה למטה עדיין חסרים. הם ישלימו את הקריטריון הזה — אין צורך לחזור עליהם במשפט המטרה.';
+    : 'יושלם בשדות "מדד הצלחה" בהמשך הטופס — אין מה להוסיף כאן.';
 
   const hasDomainAnchor = goalWords.some((w) => DOMAIN_ANCHOR_WORDS.some((a) => w.includes(a) || a.includes(w)));
   const hasAudienceOverlap = audienceWords.length > 0 && sharesWord(goalWords, audienceWords);
@@ -135,19 +149,27 @@ export function evaluateSmartGoal(plan: Plan): SmartEvaluation {
   const timeBoundMet = Boolean(plan.timeframe.trim());
   const timeBoundHint = timeBoundMet
     ? 'מסגרת הזמן מוגדרת למטה.'
-    : 'מסגרת הזמן למטה עדיין חסרה. היא משלימה את הקריטריון הזה — אין צורך לתארך את המטרה עצמה.';
+    : 'יושלם בשדה "מסגרת זמן" בהמשך הטופס — אין מה להוסיף כאן.';
+
+  // Specific and Relevant are about the goal sentence itself, so an unmet one is
+  // a real miss she can act on right here. Measurable and Time-bound belong to
+  // sibling fields further down the form: unfilled means not-yet-reached, never wrong.
+  const build = (letter: SmartLetter, label: string, met: boolean, hint: string, deferred = false): SmartCriterion =>
+    ({ letter, label, status: met ? 'met' : deferred ? 'pending' : 'missing', met, hint });
 
   const criteria: SmartCriterion[] = [
-    { letter: 'specific', label: 'ספציפית', met: specificMet, hint: specificHint },
-    { letter: 'measurable', label: 'מדידה', met: measurableMet, hint: measurableHint },
-    { letter: 'relevant', label: 'רלוונטית', met: relevantMet, hint: relevantHint },
-    { letter: 'timeBound', label: 'תחומה בזמן', met: timeBoundMet, hint: timeBoundHint },
+    build('specific', 'ספציפית', specificMet, specificHint),
+    build('measurable', 'מדידה', measurableMet, measurableHint, true),
+    build('relevant', 'רלוונטית', relevantMet, relevantHint),
+    build('timeBound', 'תחומה בזמן', timeBoundMet, timeBoundHint, true),
   ];
 
   return {
     criteria,
     metCount: criteria.filter((c) => c.met).length,
-    missing: criteria.filter((c) => !c.met),
+    // Only what she can actually act on counts as missing; a pending field is
+    // another part of the form's job, not an outstanding problem with her goal.
+    missing: criteria.filter((c) => c.status === 'missing'),
     achievableReflection: ACHIEVABLE_REFLECTION,
   };
 }

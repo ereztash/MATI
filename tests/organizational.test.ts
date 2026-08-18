@@ -115,6 +115,40 @@ test('a systemic candidate needs spread, persistence, impact and a majority', ()
   assert.equal(classifySystemicPattern(rows(3, 2, false)).classification, 'persistent_pattern', 'no majority adverse');
 });
 
+test('a local cluster surfaces for inquiry only when it bears on implementation', () => {
+  // Q12 asks for sensitivity at 2-3 repetitions inside one framework; Q11 is
+  // equally explicit that recurrence alone is not systemic. So the same cluster
+  // surfaces or not depending on operational impact, and never as a systemic claim.
+  const cluster = (operationalImpact: 'low' | 'high'): AggregatedSignalObservation[] =>
+    Array.from({ length: 3 }, (_, i) => ({
+      key: 'goal_attainment', contributorId: `c${i}`, contextId: 'one-framework',
+      periodId: '2026-01', adverse: true, operationalImpact,
+    }));
+
+  const weighty = classifySystemicPattern(cluster('high'));
+  assert.equal(weighty.classification, 'local_cluster');
+  assert.equal(weighty.maySurfaceToOrganization, true, 'three in one framework, with impact, is worth asking about');
+  assert.equal(weighty.requiresHumanReview, true);
+  assert.equal(weighty.mayAssertCausality, false, 'surfacing is never a causal claim');
+
+  const slight = classifySystemicPattern(cluster('low'));
+  assert.equal(slight.classification, 'local_cluster');
+  assert.equal(slight.maySurfaceToOrganization, false, 'recurrence without operational impact stays local');
+});
+
+test('identifiability risk is reported rather than suppressed once the cohort is small', () => {
+  const rows = (n: number): AggregatedSignalObservation[] => Array.from({ length: n }, (_, i) => ({
+    key: 'goal_attainment', contributorId: `c${i}`, contextId: `ctx${i}`,
+    periodId: '2026-01', adverse: true, operationalImpact: 'high',
+  }));
+  assert.equal(classifySystemicPattern(rows(3)).identifiabilityRisk, 'elevated');
+  assert.equal(classifySystemicPattern(rows(4)).identifiabilityRisk, 'elevated');
+  assert.equal(classifySystemicPattern(rows(5)).identifiabilityRisk, 'low');
+  // Even a decision that is withheld still carries the risk assessment.
+  assert.equal(classifySystemicPattern(rows(2)).classification, 'insufficient_privacy_floor');
+  assert.equal(classifySystemicPattern(rows(2)).identifiabilityRisk, 'elevated');
+});
+
 test('causality is never assertable and cause/policy/action stay with a human', () => {
   const decision = classifySystemicPattern([]);
   assert.equal(decision.mayAssertCausality, false);
@@ -192,7 +226,14 @@ test('aggregation counts distinct contributors, contexts and periods', () => {
   assert.equal(goals.contexts, 2);
   assert.equal(goals.periods, 2);
   assert.equal(goals.concerns, 3, 'all three reported partial attainment');
-  assert.equal(goals.classification?.classification, 'insufficient_privacy_floor', 'three contributors is below the floor');
+  // The floor is 3 by an explicit decision (see MIN_AGGREGATE_COHORT): the manager
+  // asked for sensitivity at 2-3 repetitions, so three contributors now clears it
+  // rather than being withheld. It classifies on its own merits from there.
+  assert.equal(goals.classification?.classification, 'persistent_pattern');
+  assert.equal(goals.classification?.maySurfaceToOrganization, true);
+  // Clearing the floor is not the same as being anonymous — three is still small
+  // enough to infer individuals, and the decision has to say so out loud.
+  assert.equal(goals.classification?.identifiabilityRisk, 'elevated');
 
   // A percentage has no cut-off, so it aggregates as scope only and never classifies.
   const rate = summaries.find((s) => s.key === 'implementation_rate')!;

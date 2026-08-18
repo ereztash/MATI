@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { nav, savedPlan, seed, STORAGE_KEY } from './fixtures';
+import { MIN_AGGREGATE_COHORT } from '../../lib/organizational-signals';
 
 const SECRET_NAME = 'נועה כהן';
 const SECRET_FRAMEWORK = 'בית ספר הדקל';
@@ -117,7 +118,9 @@ test('the privacy floor hides patterns below the cohort size', async ({ page }, 
   const files = writePacks(dir, 5);
   await page.goto('/org');
 
-  await page.setInputFiles('input[type=file]', files.slice(0, 4));
+  // Driven off the constant rather than a literal: the floor moved from 5 to 3
+  // on 2026-08-18 and this assertion silently encoded the old value.
+  await page.setInputFiles('input[type=file]', files.slice(0, MIN_AGGREGATE_COHORT - 1));
   await expect(page.locator('text=רצפת פרטיות פעילה')).toBeVisible();
   await expect(page.locator('article').filter({ hasText: 'השגת מטרות' })).toHaveCount(0);
 
@@ -159,7 +162,7 @@ test('the aggregate report downloads and asserts no causality', async ({ page },
   const report = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
 
   expect(report.schema).toBe('mati-organizational-aggregate-v1');
-  expect(report.privacyFloor).toBe(5);
+  expect(report.privacyFloor).toBe(MIN_AGGREGATE_COHORT);
   expect(report.cohort).toEqual({ contributors: 5, contexts: 5, periods: 1 });
   expect(report.patterns.every((p: { mayAssertCausality: boolean }) => p.mayAssertCausality === false)).toBe(true);
 });

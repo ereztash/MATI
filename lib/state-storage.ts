@@ -59,6 +59,12 @@ export function migrateState(raw: unknown): MatiState {
     },
     summative: { ...emptyState.summative, ...objectOr(source.summative) },
     history: Array.isArray(source.history) ? source.history : [],
+    // Same guard as history: `...source` above spreads unvalidated stored data,
+    // so a corrupted value here would otherwise reach diffPlans as garbage.
+    planRevisions: Array.isArray(source.planRevisions) ? source.planRevisions : [],
+    // Only a real object can serve as a diff baseline; merging onto emptyState.plan
+    // guarantees every tracked field exists even in a save that predates one.
+    lastSavedPlan: source.lastSavedPlan ? { ...emptyState.plan, ...objectOr(source.lastSavedPlan) } : undefined,
   };
 }
 

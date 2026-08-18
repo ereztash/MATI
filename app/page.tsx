@@ -10,6 +10,7 @@ import {
 import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
 import { evaluateSmartGoal } from '../lib/smart-criteria';
 import { addDays, buildPersonalGantt, timelinePercent, toDateOnly, TimelineMilestone } from '../lib/plan-timeline';
+import { changedFieldsSummary, diffPlans } from '../lib/plan-revisions';
 
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
@@ -50,11 +51,32 @@ export default function Home() {
   function updatePost(key: keyof MatiState['formative']['post'], value: string) { setState((s) => ({ ...s, formative: { ...s.formative, post: { ...s.formative.post, [key]: value } } })); }
 
   function savePlan() {
-    if (!state.plan.audience.trim() || !state.plan.metric1.trim() || !state.plan.metric2.trim() || !state.plan.timeframe.trim()) { setNotice('כדי שנוכל לבנות תוכנית שתעבוד בשטח, חסרים קהל יעד, שני מדדי הצלחה או מסגרת זמן. השלימי רק את החלקים החסרים.'); return; }
+    // Name where each missing field lives. The form shows one part at a time, so a
+    // generic "something is missing" reads as a dead end when the field in question
+    // is two screens ahead and the mentor has no way to know that.
+    const missingParts = [
+      !state.plan.audience.trim() && 'קהל היעד (חלק 1)',
+      (!state.plan.metric1.trim() || !state.plan.metric2.trim()) && 'שני מדדי הצלחה (חלק 2)',
+      !state.plan.timeframe.trim() && 'מסגרת זמן (חלק 3)',
+    ].filter(Boolean) as string[];
+    if (missingParts.length) { setNotice(`כדי לשמור את התוכנית חסרים עוד: ${missingParts.join(', ')}. אפשר להמשיך עם "הבא" ולהשלים אותם — ואז לשמור.`); return; }
     if (!smartGoalLooksValid(state.plan.smartGoal)) { setNotice('כדי להשלים את מטרת התוכנית, כתבי במשפט אחד מה אמור להשתנות אצל צוותי המוקד. את המדדים ומסגרת הזמן נבדוק בשדות הייעודיים.'); return; }
     const stamp = new Date().toISOString();
-    setState((prev) => ({ ...prev, plan: { ...prev.plan, savedAt: stamp }, history: [...prev.history.slice(-11), { at: stamp, stage: 1, label: 'תוכנית עבודה נשמרה', note: prev.plan.smartGoal }] }));
-    setNotice('התוכנית נשמרה. עכשיו אפשר להשתמש במראה כדי לבדוק איפה התכנון כבר חזק ואיפה עוד חסרה ראיה או בעלות ברורה.');
+    // Diff against the previous saved version before overwriting it: the record
+    // of what she changed is the pilot's success signal, so it has to be
+    // captured at the moment the old version is superseded or it is gone.
+    const changes = state.lastSavedPlan ? diffPlans(state.lastSavedPlan, state.plan) : [];
+    const saved: MatiState['plan'] = { ...state.plan, savedAt: stamp };
+    setState((prev) => ({
+      ...prev,
+      plan: saved,
+      lastSavedPlan: saved,
+      planRevisions: changes.length ? [...prev.planRevisions.slice(-19), { at: stamp, changes }] : prev.planRevisions,
+      history: [...prev.history.slice(-11), { at: stamp, stage: 1, label: changes.length ? 'תוכנית עבודה עודכנה' : 'תוכנית עבודה נשמרה', note: prev.plan.smartGoal }],
+    }));
+    setNotice(changes.length
+      ? `התוכנית עודכנה, ו־${changes.length === 1 ? 'השינוי נשמר' : `${changes.length} השינויים נשמרו`} לצד הגרסה הקודמת. שינוי בתוכנית הוא סימן ללמידה, לא לחוסר עקביות — הוא מתועד למטה.`
+      : 'התוכנית נשמרה. עכשיו אפשר להשתמש במראה כדי לבדוק איפה התכנון כבר חזק ואיפה עוד חסרה ראיה או בעלות ברורה.');
   }
 
   function saveFormative() {
@@ -92,6 +114,7 @@ function PlanMode({ state, updatePlan, savePlan, dimensions, setState }: { state
     <FormSection number="3" title="מה צריך לקרות מסביב כדי שזה יעבוד" tone="gold"><Field label="מסגרת זמן גסה" value={state.plan.timeframe} onChange={(v) => updatePlan('timeframe', v)} placeholder="ספטמבר–ינואר, אחת לשבועיים" /><Field label="איפה נדרשת גמישות?" value={state.plan.flexibility} onChange={(v) => updatePlan('flexibility', v)} placeholder="מה עשוי להשתנות בלי לשבור את המטרה?" /><Field label="איזו מעורבות מנהלים נדרשת?" value={state.plan.managers} onChange={(v) => updatePlan('managers', v)} placeholder="החלטות, משאבים, זמן, גיבוי" /><Field label="איך תיראה עצמאות של המודרך?" value={state.plan.independence} onChange={(v) => updatePlan('independence', v)} placeholder="מה הוא יעשה גם כשאת לא בחדר?" /></FormSection>
     <div className="actions"><button className="primary" onClick={savePlan}><span>אשרי ושמרי את תוכנית העבודה</span><b aria-hidden="true">←</b></button></div>
     {planSaved(state) && <Mirror dimensions={dimensions} state={state}><div className="coachingBlock"><span className="coachingLabel">צעד קטן שאפשר לעשות עכשיו</span><p>{state.plan.nextSmallStep || suggestion}</p>{!state.plan.nextSmallStep && <button className="secondary" onClick={() => setState((s) => ({ ...s, plan: { ...s.plan, nextSmallStep: suggestion } }))}>אמצי את הצעד לתוכנית</button>}<div className="socraticGrid"><TextArea label="איך ההצעה מתיישבת עם האני המקצועי שלך?" value={state.plan.identityFit} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, identityFit: v } }))} rows={3} /><TextArea label="מה ייתן לך ביטחון לבצע את הצעד הזה?" value={state.plan.confidenceNeed} onChange={(v) => setState((s) => ({ ...s, plan: { ...s.plan, confidenceNeed: v } }))} rows={3} /></div></div></Mirror>}
+    {planSaved(state) && <PlanChangeLog state={state} />}
     {planSaved(state) && <PersonalGanttView state={state} setState={setState} />}
   </>;
 }
@@ -147,7 +170,34 @@ function Mirror({ dimensions, state, children }: { dimensions: ReturnType<typeof
 function SmartChecklist({ plan }: { plan: MatiState['plan'] }) {
   if (!plan.smartGoal.trim()) return null;
   const evaluation = evaluateSmartGoal(plan);
-  return <div className="smartChecklist"><ul>{evaluation.criteria.map((c) => <li key={c.letter} className={c.met ? 'smartMet' : 'smartMissing'}><b aria-hidden="true">{c.met ? '✓' : '○'}</b><span><strong>{c.label}</strong>{!c.met && ` — ${c.hint}`}</span></li>)}</ul><small className="smartReflect">{evaluation.achievableReflection}</small></div>;
+  const mark = { met: '✓', missing: '○', pending: '·' } as const;
+  return <div className="smartChecklist"><ul>{evaluation.criteria.map((c) => <li key={c.letter} className={`smart-${c.status}`}><b aria-hidden="true">{mark[c.status]}</b><span><strong>{c.label}</strong>{c.status !== 'met' && ` — ${c.hint}`}</span></li>)}</ul><small className="smartReflect">{evaluation.achievableReflection}</small></div>;
+}
+
+function PlanChangeLog({ state }: { state: MatiState }) {
+  const revisions = state.planRevisions;
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('he-IL', { day: 'numeric', month: 'long' });
+  if (!revisions.length) {
+    return <section className="planChanges empty"><div className="sectionHead compact"><div><span className="kicker">מה השתנה בתוכנית</span><h3>עוד לא שינית את התוכנית</h3></div></div>
+      <p>זו עדיין הגרסה הראשונה. אם בהמשך השנה תשני מטרה, מדד או לוח זמנים — הגרסה הקודמת תישמר כאן לצד החדשה, כדי שיהיה אפשר לראות מה למדת ולא רק איפה הגעת.</p></section>;
+  }
+  const summary = changedFieldsSummary(revisions);
+  return <section className="planChanges"><div className="sectionHead compact"><div><span className="kicker">מה השתנה בתוכנית</span><h3>{revisions.length === 1 ? 'עדכנת את התוכנית פעם אחת' : `עדכנת את התוכנית ${revisions.length} פעמים`}</h3></div><p>שינוי בתוכנית הוא ראיה ללמידה. כאן נשמר מה בדיוק השתנה ומתי.</p></div>
+    <div className="planChangesSummary">{summary.map((s) => <span key={s.label}>{s.label}{s.times > 1 ? ` · ${s.times}×` : ''}</span>)}</div>
+    <ol className="planChangeList">{[...revisions].reverse().map((revision) => (
+      <li key={revision.at}>
+        <b>{fmt(revision.at)}</b>
+        <ul>{revision.changes.map((change) => (
+          <li key={change.field}>
+            <strong>{change.label}</strong>
+            <span className="planChangeBefore">{change.before || '(היה ריק)'}</span>
+            <span className="planChangeArrow" aria-hidden="true">←</span>
+            <span className="planChangeAfter">{change.after || '(רוקן)'}</span>
+          </li>
+        ))}</ul>
+      </li>
+    ))}</ol>
+  </section>;
 }
 
 function PersonalGanttView({ state, setState }: { state: MatiState; setState: React.Dispatch<React.SetStateAction<MatiState>> }) {

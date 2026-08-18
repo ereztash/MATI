@@ -1,3 +1,5 @@
+import type { PlanRevision } from './plan-revisions';
+
 export type Stage = 1 | 2 | 3;
 export type Choice = '' | 'yes' | 'partial' | 'no';
 export type Scale5 = 1 | 2 | 3 | 4 | 5 | null;
@@ -52,7 +54,17 @@ export type PostReflection = { oneThing: string; feeling: string; nextCheck: str
 export type Formative = { route: 'short' | 'full'; context: FormativeContext; answers: FormativeAnswers; post: PostReflection; savedAt?: string; };
 export type Summative = { achievement: string; achievementMetric: string; turningPoint: string; nextYearChange: string; savedAt?: string; };
 export type HistoryEntry = { at: string; stage: Stage; label: string; note: string; };
-export type MatiState = { plan: Plan; formative: Formative; summative: Summative; history: HistoryEntry[]; manualStage?: Stage; };
+export type MatiState = {
+  plan: Plan;
+  formative: Formative;
+  summative: Summative;
+  history: HistoryEntry[];
+  manualStage?: Stage;
+  /** Before/after trail of substantive plan changes — see lib/plan-revisions.ts. */
+  planRevisions: PlanRevision[];
+  /** The plan exactly as it stood at the last save; the baseline each new save is diffed against. */
+  lastSavedPlan?: Plan;
+};
 
 const emptyAnswers: FormativeAnswers = {
   q1: { goalAchievement: '', goalsAnswered: '', measuresDefined: '', implementationPercent: '', evidence: '' },
@@ -71,6 +83,7 @@ export const emptyState: MatiState = {
   formative: { route: 'short', context: { instructorName: '', framework: '', period: '', menteeCount: '', centralGoals: '' }, answers: emptyAnswers, post: { oneThing: '', feeling: '', nextCheck: '' } },
   summative: { achievement: '', achievementMetric: '', turningPoint: '', nextYearChange: '' },
   history: [],
+  planRevisions: [],
 };
 
 export function stageFromDate(date = new Date()): Stage | null {

@@ -88,3 +88,31 @@ test('metCount and missing stay consistent with the four real criteria', () => {
   assert.equal(evaluation.metCount, 4);
   assert.equal(evaluation.missing.length, 0);
 });
+
+test('deferred criteria are pending, not misses — the screen-1 trap', () => {
+  // Reproduces a real report: on part 1 of the form only the audience and goal
+  // fields exist, yet Measurable and Time-bound were rendered as warnings about
+  // fields two screens ahead. An unreached field is not a mistake, and showing
+  // it as one made a first-time user believe the goal field was blocking her.
+  const evaluation = evaluateSmartGoal(basePlan({ audience: 'מחנכות', smartGoal: 'לשפר את ההוראה' }));
+  const status = (letter: string) => evaluation.criteria.find((c) => c.letter === letter)!.status;
+  assert.equal(status('measurable'), 'pending');
+  assert.equal(status('timeBound'), 'pending');
+  // Only what she can act on right here counts as missing.
+  assert.deepEqual(evaluation.missing.map((c) => c.letter).sort(), ['relevant', 'specific']);
+});
+
+test('a deferred criterion becomes met — never missing — once its own field is filled', () => {
+  const evaluation = evaluateSmartGoal(basePlan({
+    smartGoal: 'להטמיע אצל המחנכות שימוש בהתאמות', metric1: 'תצפיות', metric2: 'משוב', timeframe: 'ספטמבר–ינואר',
+  }));
+  for (const letter of ['measurable', 'timeBound']) {
+    assert.equal(evaluation.criteria.find((c) => c.letter === letter)!.status, 'met');
+  }
+  assert.equal(evaluation.missing.length, 0);
+});
+
+test('met mirrors status so existing callers stay correct', () => {
+  const evaluation = evaluateSmartGoal(basePlan({ smartGoal: 'לשפר את ההוראה' }));
+  for (const c of evaluation.criteria) assert.equal(c.met, c.status === 'met');
+});
