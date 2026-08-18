@@ -51,7 +51,7 @@ const requiredInvariants = [
 const declared = new Set((contract.invariants ?? []).map((item) => item.id));
 for (const id of requiredInvariants) if (!declared.has(id)) issue('MISSING_INVARIANT', `System coherence contract is missing ${id}`);
 
-// R2: UX state may use interaction structure, device and time, but not semantic mining of reflection prose.
+// R2: UX state may use interaction structure, device and time, but not semantic mining of reflection prose or unrelated metadata.
 const interactionBody = bodyOf(stages, 'analyzeInteraction');
 if (!interactionBody) issue('INTERACTION_PROFILE_MISSING', 'analyzeInteraction is missing.');
 for (const forbidden of ['collectStrings', 'minimalTokens', 'negative =', 'overload-language', 'קשה|מתסכל', 'מותשת', 'נכשל|כישלון']) {
@@ -59,6 +59,12 @@ for (const forbidden of ['collectStrings', 'minimalTokens', 'negative =', 'overl
 }
 if (/\.length\s*[<>]=?\s*\d+/.test(interactionBody) || /reduce\([^)]*\.length/.test(interactionBody)) {
   issue('FREE_TEXT_LENGTH_PROFILE', 'analyzeInteraction must not infer UX state from reflection-text length.');
+}
+for (const forbiddenSource of ['state.plan', 'state.formative.context', 'state.formative.post', 'state.summative', 'state.history']) {
+  if (interactionBody.includes(forbiddenSource)) issue('UX_SENSOR_SCOPE_DRIFT', `Response-modality sensing must not use unrelated metadata or stages: ${forbiddenSource}`);
+}
+if (!interactionBody.includes('state.formative.answers')) {
+  issue('UX_SENSOR_SOURCE_MISSING', 'Response-modality sensing must be scoped to the formative answer surface.');
 }
 if (!interactionBody.includes("pace: 'balanced'") || !interactionBody.includes('minimalism: false') || !interactionBody.includes('overload: false')) {
   issue('UX_PROFILE_AUTHORITY_DRIFT', 'Content-derived pace/minimalism/overload must remain disabled unless separately authorized.');
