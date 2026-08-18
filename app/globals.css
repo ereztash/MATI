@@ -1,0 +1,85 @@
+:root {
+  --bg: #f4f2ec;
+  --paper: #fffdf8;
+  --ink: #18312c;
+  --muted: #66746f;
+  --line: #d9ded8;
+  --accent: #1d6d55;
+  --accent-soft: #e8f2ed;
+  --warm: #e9c98d;
+  --shadow: 0 18px 55px rgba(28, 52, 45, .09);
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; color: var(--ink); background: radial-gradient(circle at 15% 10%, #ffffff 0, transparent 28%), var(--bg); font-family: Arial, "Noto Sans Hebrew", sans-serif; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+.shell { max-width: 1240px; margin: 0 auto; padding: 34px 26px 50px; }
+.hero { background: var(--ink); color: white; border-radius: 28px; padding: 34px; box-shadow: var(--shadow); }
+.brandRow { display: flex; justify-content: space-between; gap: 30px; align-items: flex-start; }
+.eyebrow, .kicker { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; font-weight: 800; opacity: .78; }
+h1 { margin: 0; max-width: 690px; font-size: clamp(36px, 5vw, 68px); line-height: 1.03; letter-spacing: -.04em; }
+.lead { max-width: 720px; margin: 18px 0 0; color: #dbe6e1; line-height: 1.65; font-size: 17px; }
+.privacy { border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 10px 14px; white-space: nowrap; font-size: 13px; color: #e6efe9; }
+.stageStrip { margin-top: 34px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stage { text-align: right; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.05); color: white; border-radius: 18px; padding: 16px; display: grid; gap: 5px; }
+.stage span { color: var(--warm); font-size: 12px; font-weight: 800; }
+.stage small { color: #b9c9c2; }
+.stage.active { background: white; color: var(--ink); }
+.stage.active small { color: var(--muted); }
+.notice { margin: 16px 0 0; background: #fff4d8; border: 1px solid #ead6a3; border-radius: 15px; padding: 14px 16px; line-height: 1.5; }
+.workspace { display: grid; grid-template-columns: 280px minmax(0,1fr); gap: 18px; align-items: start; margin-top: 18px; }
+.sideCard, .mainCard { background: var(--paper); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 10px 30px rgba(28,52,45,.05); }
+.sideCard { padding: 24px; position: sticky; top: 18px; }
+.sideCard h2 { margin: 2px 0 8px; font-size: 28px; }
+.sideCard p { color: var(--muted); line-height: 1.5; font-size: 14px; }
+.statusList { display: grid; gap: 10px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 14px; }
+.statusList b { display: inline-grid; width: 22px; color: var(--accent); }
+.mainCard { padding: 28px; }
+.sectionHead { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 24px; }
+.sectionHead h2, .sectionHead h3 { margin: 0; font-size: 31px; letter-spacing: -.02em; }
+.sectionHead p { margin: 0; max-width: 420px; color: var(--muted); line-height: 1.55; }
+.sectionHead.compact { margin-bottom: 16px; }
+.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.field, .question { display: grid; gap: 8px; }
+.field span, .question span { font-weight: 750; }
+.field input, .question textarea { width: 100%; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 14px; padding: 13px 14px; outline: none; transition: .18s; }
+.field input:focus, .question textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,109,85,.1); }
+.question small { color: var(--muted); line-height: 1.55; }
+.actions { display: flex; justify-content: flex-start; margin-top: 22px; }
+.primary { border: 0; background: var(--accent); color: white; border-radius: 14px; padding: 13px 20px; font-weight: 800; box-shadow: 0 7px 18px rgba(29,109,85,.2); }
+.primary:hover { transform: translateY(-1px); }
+.routePicker { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 22px; }
+.choice { display: grid; gap: 5px; text-align: right; border: 1px solid var(--line); background: white; border-radius: 16px; padding: 16px; color: var(--ink); }
+.choice span { color: var(--muted); font-size: 13px; }
+.activeChoice { border-color: var(--accent); background: var(--accent-soft); }
+.questionStack { display: grid; gap: 16px; }
+.question { border-top: 1px solid var(--line); padding-top: 16px; }
+.question:first-child { border-top: 0; padding-top: 0; }
+.mirror { margin-top: 28px; padding-top: 26px; border-top: 1px solid var(--line); }
+.dimensionGrid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.dimension { border: 1px solid var(--line); border-radius: 15px; padding: 14px; background: white; }
+.dimension div { display: flex; justify-content: space-between; gap: 10px; }
+.dimension div span { color: #b27d22; letter-spacing: .05em; white-space: nowrap; }
+.dimension p { color: var(--muted); margin: 7px 0 0; font-size: 13px; }
+.opportunity { margin-top: 12px; background: var(--accent-soft); border-radius: 16px; padding: 17px; }
+.opportunity p { margin: 7px 0 0; color: #3f5f55; line-height: 1.55; }
+.beforeAfter { background: rgba(255,255,255,.6); border-radius: 10px; padding: 10px; }
+.rubric { margin-top: 24px; background: #f5efe2; border-radius: 18px; padding: 20px; }
+.rubricGrid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
+.rubricGrid div { background: rgba(255,255,255,.75); border-radius: 12px; padding: 13px; }
+.rubricGrid p { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+footer { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; padding: 20px 4px 0; }
+.textButton { border: 0; background: transparent; color: var(--muted); text-decoration: underline; }
+@media (max-width: 840px) {
+  .shell { padding: 16px 12px 36px; }
+  .hero { border-radius: 20px; padding: 24px 18px; }
+  .brandRow, .sectionHead { display: block; }
+  .privacy { display: inline-block; margin-top: 18px; }
+  .stageStrip { grid-template-columns: 1fr; }
+  .workspace { grid-template-columns: 1fr; }
+  .sideCard { position: static; }
+  .formGrid, .dimensionGrid, .routePicker, .rubricGrid { grid-template-columns: 1fr; }
+  .mainCard { padding: 20px 16px; }
+  .sectionHead p { margin-top: 10px; }
+}
