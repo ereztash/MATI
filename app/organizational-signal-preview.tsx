@@ -90,12 +90,12 @@ export default function OrganizationalSignalPreview({ signals }: { signals: Orga
       </div>
 
       <div className="signalExport">
-        <div><span className="homeKicker">שיתוף מבוקר</span><h3>יצוא signal בלבד</h3><p>הקובץ אינו כולל שם, שם מסגרת או טקסט חופשי. הזיני קוד מסגרת אנונימי שסוכם בארגון — לא את שם בית הספר.</p></div>
-        <label>קוד מסגרת אנונימי<input value={contextCode} onChange={(event) => { setContextCode(event.target.value); setExported(false); }} placeholder="למשל RGV-07" maxLength={24} /></label>
+        <div><span className="homeKicker">שיתוף מבוקר</span><h3>יצוא signal בלבד</h3><p>הקובץ אינו כולל שם, שם מסגרת או טקסט חופשי. הוא כן כולל מזהה משתתפת פסבדונימי יציב וקוד מסגרת מקודד כדי לאפשר חיבור בין תקופות בלי להשתמש בשם. הזיני קוד שסוכם בארגון — לא את שם בית הספר.</p></div>
+        <label>קוד מסגרת מקודד<input value={contextCode} onChange={(event) => { setContextCode(event.target.value); setExported(false); }} placeholder="למשל RGV-07" maxLength={24} /></label>
         <button type="button" onClick={exportPack} disabled={!canExport}>{exported ? 'הקובץ נשמר' : 'ייצוא signal'}</button>
       </div>
 
-      <p className="signalRule">גם חבילת signal אחת אינה מוצגת כתמונה ארגונית. קונסולת הארגון מציגה דפוס רק לאחר לפחות {MIN_AGGREGATE_COHORT} משתתפות, ולעולם לא מסיקה סיבה או אשמה.</p>
+      <p className="signalRule">חבילת signal אינה אנונימית במובן מתמטי: היא פסבדונימית ומסוננת. גם חבילה אחת אינה מוצגת כתמונה ארגונית. קונסולת הארגון מציגה דפוס רק לאחר לפחות {MIN_AGGREGATE_COHORT} משתתפות, ולעולם לא מסיקה סיבה או אשמה.</p>
     </section>
   );
 }
