@@ -9,6 +9,8 @@ const contract = JSON.parse(read('lib', 'system-coherence-contract.json'));
 const stages = read('lib', 'stages.ts');
 const contextEngine = read('lib', 'context-engine.ts');
 const page = read('app', 'page.tsx');
+const experienceShell = read('app', 'experience-shell.tsx');
+const workSession = read('app', 'work-session-layer.tsx');
 const orgPreview = read('app', 'organizational-signal-preview.tsx');
 const readme = read('README.md');
 const orgContract = read('docs', 'organizational-signal-contract.md');
@@ -22,6 +24,15 @@ function warning(code, message) { warnings.push({ code, message }); }
 function bodyOf(source, functionName) {
   const match = source.match(new RegExp(`(?:export\\s+)?function\\s+${functionName}\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\}`));
   return match?.[1] ?? '';
+}
+function walk(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(full));
+    else out.push(full);
+  }
+  return out;
 }
 
 const requiredInvariants = [
@@ -59,44 +70,91 @@ if (!strategyBody.includes("has('device-mobile')") || !strategyBody.includes("ha
   issue('OBSERVABLE_CONTEXT_DRIFT', 'Context strategy should retain observable device/session signals as its low-risk adaptation basis.');
 }
 
-// C1/C6: documentation and implementation must describe the same Stage 1 gate.
+// R3: user-visible derivations must disclose derivation and preserve source authority.
+for (const phrase of [
+  'זה תמצות מכני של מה שכתבת',
+  'השאירי את הטקסט המקורי כסמכות',
+  'זה חישוב מתוך המספרים שהזנת, לא הערכה של המערכת',
+  'כל המסקנות כאן נשענות על מה שהזנת',
+]) {
+  if (!page.includes(phrase)) issue('DERIVATION_DISCLOSURE_DRIFT', `User-visible derivation disclosure is missing: ${phrase}`);
+}
+
+// C1: Stage 1 has one semantic gate even though several surfaces guide the user through it.
+const stage1Fields = ['audience', 'smartGoal', 'metric1', 'metric2', 'timeframe'];
+const optionalStage1 = ['flexibility', 'managers', 'independence'];
+const planReadyBody = bodyOf(stages, 'planReady');
+const savePlanBody = bodyOf(page, 'savePlan');
+const nextActionBody = bodyOf(experienceShell, 'nextAction');
+for (const field of stage1Fields) {
+  if (!planReadyBody.includes(`plan.${field}`)) issue('GATE_SOURCE_DRIFT', `planReady no longer references ${field}`);
+  if (!savePlanBody.includes(`state.plan.${field}`) && field !== 'smartGoal') issue('SAVE_GATE_DRIFT', `savePlan no longer checks ${field}`);
+  if (!nextActionBody.includes(`state.plan.${field}`)) issue('HOME_GATE_DRIFT', `Home nextAction no longer reflects ${field}`);
+}
+if (!savePlanBody.includes('smartGoalLooksValid(state.plan.smartGoal)')) issue('SAVE_GATE_DRIFT', 'savePlan no longer delegates goal validity to smartGoalLooksValid.');
+for (const field of optionalStage1) {
+  if (planReadyBody.includes(`plan.${field}`)) issue('OPTIONAL_FIELD_BECAME_GATE', `planReady silently made ${field} mandatory.`);
+  if (savePlanBody.includes(`state.plan.${field}`)) issue('OPTIONAL_FIELD_BECAME_GATE', `savePlan silently made ${field} mandatory.`);
+}
+
+// C2/R1: repeated cross-stage concepts must be explicitly reviewed as distinct temporal meanings.
+const reviewed = contract.reviewedCrossStageRepresentations ?? [];
+if (reviewed.length < 4) issue('CROSS_STAGE_REGISTRY_INCOMPLETE', 'Cross-stage representation registry is unexpectedly small.');
+for (const item of reviewed) {
+  if (item.status !== 'DISTINCT_TEMPORAL_MEANING' || !item.earlierMeaning || !item.laterMeaning) {
+    issue('CROSS_STAGE_SEMANTIC_AMBIGUITY', `${item.earlier} -> ${item.later} is not explicitly distinguished.`);
+  }
+}
+for (const label of ['מסגרת זמן גסה', 'תקופת ההערכה', 'מטרת SMART אחת', 'מטרות מרכזיות בתוכנית']) {
+  if (!page.includes(label)) issue('TEMPORAL_LABEL_DRIFT', `UI no longer distinguishes a reviewed cross-stage representation: ${label}`);
+}
+
+// C5: inquiry heuristics can raise a question, never become a gate, score or causal diagnosis.
+const heuristics = contract.inquiryOnlyHeuristics ?? [];
+if (heuristics.length < 5) issue('HEURISTIC_REGISTRY_INCOMPLETE', 'Inquiry-only heuristic registry is unexpectedly small.');
+for (const heuristic of heuristics) {
+  if (heuristic.authority !== 'INQUIRY_ONLY' || heuristic.mayGate !== false || heuristic.mayScore !== false || heuristic.mayAssertCausality !== false) {
+    issue('HEURISTIC_AUTHORITY_DRIFT', `${heuristic.id} exceeds inquiry-only authority.`);
+  }
+}
+const canOpenBody = bodyOf(stages, 'canOpenStage');
+if (canOpenBody.includes('hasLargeGoalResultGap') || canOpenBody.includes('findContradictions')) issue('HEURISTIC_BECAME_GATE', 'An inquiry heuristic is being used as a stage gate.');
+if (/if\s*\(\s*hasLargeGoalResultGap/.test(savePlanBody)) issue('HEURISTIC_BECAME_GATE', 'Goal/result heuristic is being used to block plan saving.');
+const contradictionBody = bodyOf(contextEngine, 'findContradictions');
+for (const causal of ['הסיבה היא', 'נגרם בגלל', 'גורם ל', 'מוכיח ש']) {
+  if (contradictionBody.includes(causal)) issue('CAUSALITY_OVERREACH', `Contradiction detector asserts causality: ${causal}`);
+}
+
+// C6: documentation and implementation must describe the same Stage 1 gate and adaptation model.
 const oldSmartClaims = [
   'בדיקת SMART בסיסית למטרה: זמן + רכיב מדיד',
   'המטרה עצמה חייבת לכלול זמן',
   'המטרה עצמה חייבת לכלול מדד',
 ];
-for (const claim of oldSmartClaims) if (readme.includes(claim)) issue('DOC_RULE_CONTRADICTION', `README still contains obsolete SMART rule: ${claim}`);
-if (!readme.includes('ה־SMART נבחן ברמת התוכנית השלמה')) {
-  issue('DOC_SOURCE_OF_TRUTH_MISSING', 'README must state that SMART is evaluated at the whole-plan level.');
+const textDocs = [path.join(root, 'README.md'), ...walk(path.join(root, 'docs')).filter((file) => file.endsWith('.md'))];
+for (const file of textDocs) {
+  const source = fs.readFileSync(file, 'utf8');
+  for (const claim of oldSmartClaims) if (source.includes(claim)) issue('DOC_RULE_CONTRADICTION', `${path.relative(root, file)} contains obsolete SMART rule: ${claim}`);
 }
-if (!readme.includes('קהל יעד, שינוי רצוי, שני מדדים ומסגרת זמן')) {
-  issue('DOC_GATE_DRIFT', 'README does not describe the current Stage 1 gate atoms.');
-}
+if (!readme.includes('ה־SMART נבחן ברמת התוכנית השלמה')) issue('DOC_SOURCE_OF_TRUTH_MISSING', 'README must state that SMART is evaluated at the whole-plan level.');
+if (!readme.includes('קהל יעד, שינוי רצוי, שני מדדים ומסגרת זמן')) issue('DOC_GATE_DRIFT', 'README does not describe the current Stage 1 gate atoms.');
+for (const claim of ['מינימליזם ועומס', 'תמציתי/עמוק']) if (readme.includes(claim)) issue('DOC_ADAPTATION_CONTRADICTION', `README still claims semantic response profiling: ${claim}`);
+if (!readme.includes('אינה מנתחת את משמעות הטקסט החופשי לצורך התאמת UX')) issue('DOC_PURPOSE_LIMIT_MISSING', 'README must disclose that free reflection prose is not semantically mined for UX adaptation.');
+for (const window of ['יולי–ספטמבר', 'דצמבר–פברואר', 'מאי–יוני']) if (!readme.includes(window)) issue('CALENDAR_DOC_DRIFT', `README is missing stage window ${window}`);
 
-const obsoleteAdaptiveClaims = ['מינימליזם ועומס', 'תמציתי/עמוק'];
-for (const claim of obsoleteAdaptiveClaims) if (readme.includes(claim)) issue('DOC_ADAPTATION_CONTRADICTION', `README still claims semantic response profiling: ${claim}`);
-if (!readme.includes('אינה מנתחת את משמעות הטקסט החופשי לצורך התאמת UX')) {
-  issue('DOC_PURPOSE_LIMIT_MISSING', 'README must disclose that free reflection prose is not semantically mined for UX adaptation.');
-}
-
-// Calendar semantics must agree across docs and source.
-for (const window of ['יולי–ספטמבר', 'דצמבר–פברואר', 'מאי–יוני']) {
-  if (!readme.includes(window)) issue('CALENDAR_DOC_DRIFT', `README is missing stage window ${window}`);
-}
-
-// C4/C5: privacy and organizational authority must stay aligned.
-for (const phrase of [
-  'Reflection belongs to the instructor',
-  'does not yet send or aggregate signals across devices',
-  'may not automatically',
-  'assert causality',
-]) {
+// C4: privacy claims must match every current network path, not only the signal component.
+for (const phrase of ['Reflection belongs to the instructor', 'does not yet send or aggregate signals across devices', 'may not automatically', 'assert causality']) {
   if (!orgContract.includes(phrase)) issue('ORGANIZATIONAL_AUTHORITY_DRIFT', `Organizational contract is missing authority boundary: ${phrase}`);
 }
 if (!orgPreview.includes('כרגע: מקומי בלבד')) issue('PRIVACY_COPY_DRIFT', 'Instructor signal preview no longer states that the current signal state is local only.');
 if (!orgPreview.includes('ייצוא signal')) issue('PRIVACY_EXPORT_DRIFT', 'Explicit organizational signal export control is missing.');
-if (/\bfetch\s*\(/.test(orgPreview)) issue('UNDECLARED_TRANSMISSION', 'Organizational signal preview performs network transmission; explicit export-only pilot contract would be false.');
 if (!readme.includes('אין שליחה אוטומטית של תוכן רפלקטיבי')) issue('PRIVACY_DOC_DRIFT', 'README must distinguish no automatic transmission from explicit local export.');
+const appSources = walk(path.join(root, 'app')).filter((file) => /\.(ts|tsx|js|jsx)$/.test(file));
+const networkPatterns = [/\bfetch\s*\(/, /XMLHttpRequest/, /navigator\.sendBeacon/, /new\s+WebSocket\s*\(/];
+for (const file of appSources) {
+  const source = fs.readFileSync(file, 'utf8');
+  for (const pattern of networkPatterns) if (pattern.test(source)) issue('UNDECLARED_TRANSMISSION', `${path.relative(root, file)} contains network transmission while the pilot declares no automatic sending.`);
+}
 
 // C3: expose professional conflicts without silently rewriting approved scoring.
 const pending = new Map((contract.pendingAuthorityConflicts ?? []).map((item) => [item.id, item]));
@@ -111,9 +169,10 @@ if (dimensionFloorExists && noEvidencePromiseExists) {
   }
 }
 
-// Structural UX audit remains the lower-level representation consistency gate.
+// Lower-level structural contract must still cover the full journey.
 const structural = JSON.parse(structuralContract);
 if (!Array.isArray(structural.flows) || structural.flows.length !== 3) issue('STRUCTURAL_CONTRACT_DRIFT', 'Structural UX contract must cover all three professional stages.');
+if (!workSession.includes('const summativeGroupSizes = [2, 1, 1]')) issue('WORK_UNIT_DRIFT', 'Stage 3 is no longer grouped into three professional work units.');
 
 if (issues.length) {
   console.error('System coherence audit failed:\n');
@@ -125,6 +184,6 @@ if (issues.length) {
   process.exit(1);
 }
 
-console.log(`System coherence audit passed (${requiredInvariants.length} invariants).`);
-console.log('Representation, source-of-truth, privacy, authority and documentation boundaries are aligned.');
+console.log(`System coherence audit passed (${requiredInvariants.length} invariants, ${reviewed.length} cross-stage representations, ${heuristics.length} inquiry-only heuristics).`);
+console.log('Representation, source-of-truth, privacy, authority, data-path and documentation boundaries are aligned.');
 for (const item of warnings) console.log(`PENDING: ${item.message}`);
