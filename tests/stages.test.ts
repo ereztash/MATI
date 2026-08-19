@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  analyzeInteraction, canOpenStage, emptyState, formativeCompletion, formativeStarted, hasLargeGoalResultGap,
+  analyzeInteraction, canOpenStage, deleteStakes, emptyState, formativeCompletion, formativeStarted, hasLargeGoalResultGap,
   implementationStatus, MatiState, planReady, planSaved, ratioPercent, recommendedActions, scoreDimensions,
   selfEffectivenessAverage, smartGoalLooksValid, stage2SectionStarted, stageFromDate, summarizeLongText,
 } from '../lib/stages';
@@ -135,4 +135,30 @@ test('analyzeInteraction stays unknown until there is enough to read', () => {
   const narrative = 'שמתי לב שקרה משהו אחר לגמרי כי הצוות הרגיש שזה לא עובד ולמדתי מזה הרבה';
   const intuitive = analyzeInteraction(state({ plan: { flexibility: narrative, identityFit: narrative } }));
   assert.equal(intuitive.style, 'intuitive');
+});
+
+test('deleteStakes names what is actually at risk instead of a generic warning', () => {
+  assert.equal(deleteStakes(emptyState), 'אין כרגע שום דבר שמור בדפדפן הזה — אפשר למחוק בלי לאבד עבודה.');
+
+  const withPlan = state({ plan: { ...fullPlan, savedAt: '2026-01-05T10:00:00.000Z' }, history: [{ at: '2026-01-05T10:00:00.000Z', stage: 1, label: 'x', note: '' }] });
+  assert.match(deleteStakes(withPlan), /תוכנית עבודה שמורה/);
+  assert.match(deleteStakes(withPlan), /נקודת דרך אחת בהיסטוריה/); // singular, not "1 נקודות"
+  assert.doesNotMatch(deleteStakes(withPlan), /הערכה מעצבת/);
+
+  const withEverything = state({
+    plan: { ...fullPlan, savedAt: '2026-01-05T10:00:00.000Z' },
+    formative: { savedAt: '2026-02-01T10:00:00.000Z' },
+    summative: { savedAt: '2026-06-01T10:00:00.000Z' },
+    history: [{ at: '2026-01-05T10:00:00.000Z', stage: 1, label: 'x', note: '' }, { at: '2026-02-01T10:00:00.000Z', stage: 2, label: 'x', note: '' }],
+  });
+  const stakes = deleteStakes(withEverything);
+  assert.match(stakes, /תוכנית עבודה שמורה/);
+  assert.match(stakes, /הערכה מעצבת שמורה/);
+  assert.match(stakes, /הערכה מסכמת שמורה/);
+  assert.match(stakes, /2 נקודות דרך בהיסטוריה/);
+
+  // A plan that only *looks* complete but was never actually saved (no
+  // savedAt) must not be reported as something the deletion would lose.
+  const unsavedPlan = state({ plan: fullPlan });
+  assert.equal(deleteStakes(unsavedPlan), 'אין כרגע שום דבר שמור בדפדפן הזה — אפשר למחוק בלי לאבד עבודה.');
 });

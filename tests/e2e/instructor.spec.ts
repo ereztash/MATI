@@ -176,3 +176,31 @@ test('clicking through an empty plan via the work-session wizard explains why, i
   await expect(page.locator('.view-work .workExperience .saveWhen')).toBeVisible();
   await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBeUndefined();
 });
+
+test('deleting local data takes two real clicks and names what is actually at stake', async ({ page }) => {
+  // Regression: a chaos-testing run (gremlins.js) found that a single native
+  // confirm() with a generic message doesn't distinguish a real saved year
+  // from an empty session, and gets auto-accepted by any tool (or accidental
+  // rapid-click sequence) that dismisses browser dialogs. Fixed by dropping
+  // confirm() entirely for an in-app two-step disclosure that names the
+  // actual stakes — this test drives both states through the real UI.
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => dialogs.push(d.message())); // must never fire — nothing to accept
+
+  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [{ at: '2026-01-05T10:00:00.000Z', stage: 1, label: 'תוכנית עבודה נשמרה', note: '' }] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  const trigger = page.locator('.deleteLocal > summary');
+  await trigger.click();
+  await expect(page.locator('.deleteLocalPanel p')).toContainText('תוכנית עבודה שמורה');
+  await expect(page.locator('.deleteLocalPanel p')).toContainText('נקודת דרך אחת בהיסטוריה');
+
+  // Opening the panel must not, by itself, delete anything.
+  await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBe(savedPlan.savedAt);
+
+  await page.locator('.deleteLocalConfirm').click();
+  await expect(page.locator('.notice p')).toContainText('המידע המקומי נמחק');
+  await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBeUndefined();
+  expect(dialogs).toEqual([]);
+});

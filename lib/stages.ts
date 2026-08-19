@@ -227,3 +227,20 @@ export function rubricForNextYear(state: MatiState) {
   if (state.formative.answers.q8.centralMistake) mistakes.push(`הלמידה שהמדריכה עצמה סימנה: ${state.formative.answers.q8.centralMistake}`);
   return { focus: dims.slice(0, 2).map((d) => d.name), mistakes: mistakes.length ? mistakes.slice(0, 3) : ['לא זוהתה עדיין טעות חוזרת מתוך הנתונים שנאספו.'], questions: ['מה יהיה שונה אצל צוותי המוקד אם התוכנית באמת תעבוד?', 'איזו ראיה תאפשר לדעת שהשינוי קרה ולא רק שהפעילות התקיימה?', 'איזו בעלות צריכה לעבור למודרך או למנהל כדי שהשינוי יחזיק בלעדייך?'] };
 }
+
+/**
+ * What "מחיקת המידע המקומי" is actually about to throw away — named, not generic.
+ * A chaos-testing run (gremlins.js, tests/chaos) found that a single accepted
+ * confirm() with no memory of what's at stake treats a real saved year the
+ * same as an empty session; this is the honest content half of the fix, the
+ * other half being that the deletion itself now needs two real in-app clicks
+ * instead of one dialog a bot or a lucky mis-click can accept blindly.
+ */
+export function deleteStakes(state: MatiState): string {
+  const parts: string[] = [];
+  if (planSaved(state)) parts.push('תוכנית עבודה שמורה');
+  if (state.formative.savedAt) parts.push('הערכה מעצבת שמורה');
+  if (state.summative.savedAt) parts.push('הערכה מסכמת שמורה');
+  if (state.history.length) parts.push(state.history.length === 1 ? 'נקודת דרך אחת בהיסטוריה' : `${state.history.length} נקודות דרך בהיסטוריה`);
+  return parts.length ? `יימחקו לצמיתות: ${parts.join(', ')}.` : 'אין כרגע שום דבר שמור בדפדפן הזה — אפשר למחוק בלי לאבד עבודה.';
+}

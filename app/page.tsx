@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  analyzeInteraction, canOpenStage, emptyState, fieldHoursPercent, FormativeAnswers, formativeCompletion, formativeStarted,
+  analyzeInteraction, canOpenStage, deleteStakes, emptyState, fieldHoursPercent, FormativeAnswers, formativeCompletion, formativeStarted,
   hasLargeGoalResultGap, implementationStatus, managerMeetingPercent, MatiState, planReady, planSaved, recommendedActions,
   rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, Stage, stageFromDate,
   studentImprovementPercent, summarizeLongText,
@@ -103,7 +103,7 @@ export default function Home() {
     {!notice && <AdaptiveSignal profile={profile} activeStage={activeStage} />}
     <section className="workspace" id="main-workspace"><aside className="sideCard"><span className="kicker">נכון לעכשיו</span><h2>{stageNames[activeStage]}</h2><p>{activeStage === autoStage ? 'זה השלב המתאים לפי לוח השנה.' : 'השלב נבחר ידנית לאחר בדיקת תנאי המעבר.'}</p><div className="statusList" aria-label="התקדמות שנתית"><StatusRow done={planSaved(state)} label="תוכנית עבודה שמורה" /><StatusRow done={Boolean(state.formative.savedAt)} label="הערכה מעצבת" /><StatusRow done={Boolean(state.summative.savedAt)} label="סיכום שנתי" /></div>{activeStage === 2 && <ProgressRing value={formativeCompletion(state)} label="מילוי המסלול" />}<div className="sideHint"><strong>לא צריך לסיים הכול עכשיו.</strong><span>אפשר לעצור ולחזור מאותו מכשיר. גם מידע חלקי יכול לשפר החלטה.</span></div></aside>
       <div className="mainCard">{activeStage === 1 && <PlanMode state={state} updatePlan={updatePlan} savePlan={savePlan} dimensions={dimensions} setState={setState} />}{activeStage === 2 && <FormativeMode state={state} updateContext={updateContext} updateAnswer={updateAnswer} updatePost={updatePost} setState={setState} saveFormative={saveFormative} dimensions={dimensions} profile={profile} previousFormative={previousFormative?.note} showAnalysis={showAnalysis || Boolean(state.formative.savedAt)} />}{activeStage === 3 && <SummativeMode state={state} setState={setState} addHistory={addHistory} />}</div></section>
-    <footer><span>מתי המתי״א · מתי״א רג״ב · גרסת פיילוט</span><button className="textButton" onClick={() => { if (confirm('למחוק את כל המידע שנשמר בדפדפן הזה?')) { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); setState(emptyState); setNotice('המידע המקומי נמחק.'); } }}>מחיקת המידע המקומי</button></footer>
+    <footer><span>מתי המתי״א · מתי״א רג״ב · גרסת פיילוט</span><details className="deleteLocal"><summary className="textButton">מחיקת המידע המקומי</summary><div className="deleteLocalPanel"><p>{deleteStakes(state)}</p><button type="button" className="deleteLocalConfirm" onClick={() => { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); setState(emptyState); setNotice('המידע המקומי נמחק.'); }}>כן, למחוק את הכל</button></div></details></footer>
   </main></>;
 }
 

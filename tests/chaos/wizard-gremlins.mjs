@@ -20,8 +20,14 @@
  * part is currently shown, the Gantt adjusters, and the footer's
  * "מחיקת המידע המקומי" delete button — that button is deliberately left
  * reachable, because "does a click-storm accidentally wipe local data" is
- * itself one of the questions this run exists to answer. Form-filler,
- * toucher and typer are not selector-restrictable in gremlins.js 2.x, but
+ * itself one of the questions this run exists to answer. It found exactly
+ * that once: a random sequence reached the button's confirm() and the
+ * alert mogwai (below) auto-accepted it, wiping storage mid-run. Fixed
+ * 2026-08-19 — the button no longer uses a native dialog at all (two real
+ * in-app clicks now, naming what's actually at stake), which structurally
+ * closes that exploit path: the alert mogwai only intercepts native
+ * alert()/confirm()/prompt(), so it has nothing left to auto-accept here.
+ * Form-filler, toucher and typer are not selector-restrictable in gremlins.js 2.x, but
  * none of them can navigate away on their own, so this scoping is enough
  * to keep the run meaningfully about the wizard.
  *

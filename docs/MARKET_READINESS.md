@@ -58,6 +58,12 @@ The real mechanism: `WorkSessionLayer` shows one part of Stage 1 at a time and i
 
 **Why 103 unit tests and 13 e2e tests all missed it:** the one e2e test that exercises this exact save path reaches the button by running `document.querySelectorAll('.formSection').forEach(el => el.hidden = false)` before filling anything — a direct bypass of the same wizard a real instructor has no way to skip. Fixed in `app/work-session-layer.tsx`: when no save button exists, the handler now scrolls to the `.saveWhen` hint that already explains what's missing, instead of treating "nothing to click" as "done." A new e2e test drives the actual wizard buttons end to end on an empty plan and asserts the app stays put and explains itself — checked against the pre-fix code to confirm it actually fails without the fix, not only passes with it.
 
+### The next layer: chaos testing found a second gap, in the delete button
+
+Neither the persona nor the wizard e2e test is built to click *out of order* or *rapid enough to overlap React's own state updates* — so `tests/chaos/wizard-gremlins.mjs` (gremlins.js, `npm run test:chaos`) was added to cover exactly that family. It ran clean against the fixed wizard, and found one real thing elsewhere: a long enough random click sequence starting from Stage 1 can wander, via the stage strip, to the footer's "מחיקת המידע המקומי" button — and its native `confirm()` got auto-accepted by the chaos runner's own dialog-dismissal, the same way a distracted rapid-click sequence could accept it by accident. The generic message didn't distinguish a real saved year from an empty session, and it took only one dialog.
+
+Fixed 2026-08-18 → 2026-08-19: the button no longer uses `confirm()` at all. It's a two-step in-app disclosure (`deleteStakes` in `lib/stages.ts`) that names exactly what's at risk — *"יימחקו לצמיתות: תוכנית עבודה שמורה, 3 נקודות דרך בהיסטוריה"* — or says plainly there's nothing to lose when the session really is empty. This isn't just more friction; it structurally closes the exploit path the chaos run found, since gremlins' alert-mogwai (and any tool or rushed hand) only auto-dismisses *native* dialogs — there is no longer one here to dismiss. Re-ran the same seed that had surfaced the original finding nine times after the fix: clean every time.
+
 ## First-run friction — measured and reduced 2026-08-19
 
 Reported plainly by the first person to use it rather than test it: *"האפליקציה מאוד לא נעימה למשתמש."* Measured on a Pixel 7 profile, first-run Stage 1, before any change:
