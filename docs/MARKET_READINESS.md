@@ -50,6 +50,28 @@ A failed run is a good outcome — it names where the product breaks and costs a
 
 The closing question *"אם זה היה נתקע לך בבית, למי היית פונה?"* also produces the answer to **R6**.
 
+## First-run friction — measured and reduced 2026-08-19
+
+Reported plainly by the first person to use it rather than test it: *"האפליקציה מאוד לא נעימה למשתמש."* Measured on a Pixel 7 profile, first-run Stage 1, before any change:
+
+| | before | after |
+|---|---|---|
+| First input field | y = 949px (below an 839px fold) | y = 697px |
+| Words on screen | 126, for 8 fields | 83 |
+| Warnings under an untouched goal field | 1, in the warning colour | 0 |
+| Feedback while typing | graded every keystroke | none |
+
+Four causes, in the order they hit a first-time user:
+
+1. **A warning under a field she had not touched.** The empty goal field carried a hint rendered in `--warning` — she was being corrected before she had done anything. Removed; the placeholder already said it.
+2. **Grading mid-keystroke.** The SMART checklist re-evaluated on every character. It now waits until she leaves the field, and shows **one question** instead of four rows of misses. A row of ticks is still the product marking her work, so when there is nothing worth asking it says nothing at all.
+3. **Philosophy before work.** Four paragraphs of the product explaining itself preceded the first field. Cut.
+4. **A heading sliced in half.** The sticky `.workSessionBar` overlaps the header box beneath it, which rendered the section title as the fragment "בשטח" — an app that looks broken before it is used.
+
+**Still open:** cause 4's root — the same overlap still hides the top ~40px of the stage strip. A margin on either element collapses through and moves both, so the fix is in how `WorkSessionLayer` positions relative to the header. Left visible and commented in the CSS rather than papered over with a z-index, which would only make the strip cover the bar while scrolling.
+
+The pattern worth keeping: **every one of these passed all 103 tests and all four contract checks.** None was a defect any automated check could hold an opinion about.
+
 ## The persistence family — parked 2026-08-18
 
 **R3, R7 and R10 are parked by explicit decision**, together rather than separately: an instructor-facing backup, a real store, and a transport that carries signals to the organization are one problem at three sizes, and closing any one alone would leave the others incoherent.
@@ -94,7 +116,7 @@ Naming these matters as much as the criteria — they are where effort leaks:
 
 - **A generative LLM layer.** The original bot spec assumes one. Not needed for any criterion above, and it reopens the privacy posture that R5 depends on.
 - **Multi-tenancy / other מתי״א centers.** Scope is רג״ב. The hardcoded branding stays.
-- **Further Stage 1 refinement.** Stage 1 already passes its usability check (verified 2026-08-18). More polish there is craft, not progress.
+- **Further Stage 1 refinement — with one correction.** This line previously read that Stage 1 "already passes its usability check". That claim was wrong, and wrong in an instructive way: what the 2026-08-18 audit verified was that a *script* could complete the form, which is a smoke test, not a usability check. A human then used it and reported it as unpleasant — and measurement backed him up. Cosmetic polish is still out of scope; **friction that would stop a מדריכה from returning is R1 work, not craft.** The distinction is whether a real person's experience is the evidence.
 - **Any feature not traceable to a row above.** If it can't be mapped, it doesn't ship this year.
 
 ---
