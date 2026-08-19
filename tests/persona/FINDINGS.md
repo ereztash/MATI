@@ -5,8 +5,10 @@ Persona and behaviour rules: `michal.json`. Runner: `run.mjs`.
 
 ## Result
 
-**She completed a saved work plan** — alone, on a phone, with no explanation, in 11
-human-level actions and zero console errors. The journey works end to end.
+**She completed a saved work plan** — alone, on a phone, with no explanation, and zero
+console errors. The journey works end to end. The first run took **11 human-level
+actions**; after the two fixes below it takes **9**, and neither of the two wasted taps
+exists any more.
 
 ## What the run confirmed
 
@@ -23,21 +25,36 @@ human-level actions and zero console errors. The journey works end to end.
 
 ## New findings from this run
 
-**1. The fix converts a dead end into a detour — it does not prevent it.**
-She still spends a tap on a button that cannot work, on the first screen she ever
-sees. The message is good recovery; not offering the action until it can succeed
-would be better. The save button is rendered on every part because `PlanMode` draws
-it once outside the stepped sections.
+**1. The fix converts a dead end into a detour — it does not prevent it.** ✅ fixed 2026-08-19
+She still spent a tap on a button that cannot work, on the first screen she ever sees.
+The message was good recovery; not offering the action until it can succeed is better.
+The save button was rendered on every part because `PlanMode` draws it once outside the
+stepped sections. It is now gated on `planReady(state.plan)` — until the plan can
+actually be saved, its place is held by a quiet line naming what is still needed and
+pointing at `הבא`, in muted text rather than warning colour. On the re-run, part 1
+offers exactly one action.
 
-**2. Self-narration lands at the worst possible moment.**
+**2. Self-narration lands at the worst possible moment.** ✅ fixed 2026-08-19
 Immediately below the blocked-save notice, the adaptive signal added
 *"התשובות שלך כרגע קצרות וענייניות. אשמור על תצוגה תמציתית…"* — the product
 describing its own behaviour while she is trying to recover from being blocked. Two
 stacked notices at the point of highest friction, only one of which is about her
-problem.
+problem. `AdaptiveSignal` now yields whenever a notice is showing: at the moment
+something is wrong, the only message on screen is the one about *her*.
 
 **3. The stage strip is still clipped by the sticky bar** (already recorded in
-`docs/MARKET_READINESS.md`). Visible in `step-04.png` as sliced text.
+`docs/MARKET_READINESS.md`). Visible in `step-04.png` as sliced text. ⏸️ still open —
+the fix is structural, in how `WorkSessionLayer` positions relative to the header.
+
+## Verification after the fixes
+
+Re-run of the same persona: part 1 offers only `הבא`, the full journey reaches
+`plan saved: true` in 9 steps, 0 console errors. `npm test` 103/103, all four contract
+checks pass, readiness 6/8, Playwright 13/13.
+
+Worth recording: **both findings passed every one of those checks before the persona
+found them.** That is the same pattern as the first-run friction in the DoD — the
+automated suite has no opinion about an action that is offered before it can work.
 
 ## What this does and does not replace
 

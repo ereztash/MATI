@@ -39,3 +39,4 @@
    fix is in how WorkSessionLayer is positioned relative to the header — a structural
    change, not a spacing one. Left visible rather than papered over with a z-index. */
 .smartChecklist{margin-top:2px}.smartChecklist p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.6}
+.saveWhen{margin:22px 0 0;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid var(--line);color:var(--muted);font-size:13px;line-height:1.65}
