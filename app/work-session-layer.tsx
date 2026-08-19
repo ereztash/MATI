@@ -130,7 +130,18 @@ export default function WorkSessionLayer() {
   const finish = () => {
     const before = savedStamp(readStoredState(), stage);
     const saveButton = document.querySelector<HTMLButtonElement>('.view-work .workExperience .actions .primary');
-    if (!saveButton) { openInsight(); return; }
+    if (!saveButton) {
+      // Stage 1 removes the save button from the DOM entirely while the plan
+      // isn't ready yet (see planReady in app/page.tsx) — nothing to click.
+      // That used to fall through to openInsight(), which left silently:
+      // no save, no error, and a jump to a view that says "not enough
+      // evidence yet" as if the click had done nothing at all. Whoever is
+      // clicking "הבא" through empty parts and hitting this deserves to be
+      // shown *why*, not bounced. .saveWhen carries that explanation and,
+      // like .actions, is never hidden by the per-part pagination above.
+      document.querySelector<HTMLElement>('.view-work .workExperience .saveWhen')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
     saveButton.click();
     let attempts = 0;
     const check = window.setInterval(() => {

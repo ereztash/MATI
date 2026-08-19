@@ -150,3 +150,29 @@ test('adjusting a personal-Gantt milestone never clears savedAt, and reset retur
   await row.locator('.ganttReset').click();
   await expect.poll(async () => (await readStored(page)).plan?.smallStepDate).toBe('');
 });
+
+test('clicking through an empty plan via the work-session wizard explains why, instead of silently doing nothing', async ({ page }) => {
+  // Regression: the wizard's finish button finds the real save button by
+  // querying `.actions .primary` — a button that only exists in the DOM once
+  // planReady() holds. Clicking "הבא" through empty parts used to reach
+  // "שמירה ומה למדנו" on part 3, find no button to click, and fall through to
+  // openInsight(): no save, no error, a silent jump to a view that says
+  // "not enough evidence yet" as if the click had done nothing at all. This
+  // is exactly the wizard path a real instructor uses — the happy-path test
+  // above bypasses it entirely via a direct `hidden = false`, which is why
+  // 103 unit tests and every other e2e test passed while this was live.
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  // "הבא" through part 1 and part 2 with nothing filled in either.
+  await page.locator('.workSessionPrimary').click();
+  await page.locator('.workSessionPrimary').click();
+  // Part 3's last click is labelled "שמירה ומה למדנו", not "הבא".
+  await expect(page.locator('.workSessionPrimary')).toHaveText('שמירה ומה למדנו');
+  await page.locator('.workSessionPrimary').click();
+
+  // Must stay put and explain what's missing — never silently navigate away.
+  await expect(page.locator('.experienceShell')).toHaveClass(/view-work/);
+  await expect(page.locator('.view-work .workExperience .saveWhen')).toBeVisible();
+  await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBeUndefined();
+});

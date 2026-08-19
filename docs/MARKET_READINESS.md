@@ -50,6 +50,14 @@ A failed run is a good outcome — it names where the product breaks and costs a
 
 The closing question *"אם זה היה נתקע לך בבית, למי היית פונה?"* also produces the answer to **R6**.
 
+## The wizard's finish button silently did nothing — found and fixed 2026-08-19
+
+Found by clicking through every button in the running app like an instructor would, after being asked directly: *"אני עדיין לא מצליח לעבור את המסך הזה."* Not found by reading the code, and not found by the persona harness either — both had already missed it.
+
+The real mechanism: `WorkSessionLayer` shows one part of Stage 1 at a time and injects its own "הבא" / "שמירה ומה למדנו" bar. Its finish handler doesn't know about `planReady` — it finds the real save button with `document.querySelector('.actions .primary')` and clicks it. The button gating added earlier the same day (see "First-run friction" below) means that selector matches nothing until every required field is filled. When it found nothing, the handler's fallback was to open the "מה למדנו" tab anyway — no save, no error, a silent jump to a screen that says *"עוד אין מספיק ראיות לניתוח"* as if the click had simply done nothing. Click "לעבודה" to go back, fill something, try again, land in the same place: a dead end that looks like an ordinary "not ready yet" screen, with no way to learn why. Confirmed narrow to Stage 1 — Stage 2 and Stage 3 render their save buttons unconditionally, so the same handler correctly shows its own notice (Stage 2) or the browser's native `alert()` (Stage 3, a separate small inconsistency left as-is).
+
+**Why 103 unit tests and 13 e2e tests all missed it:** the one e2e test that exercises this exact save path reaches the button by running `document.querySelectorAll('.formSection').forEach(el => el.hidden = false)` before filling anything — a direct bypass of the same wizard a real instructor has no way to skip. Fixed in `app/work-session-layer.tsx`: when no save button exists, the handler now scrolls to the `.saveWhen` hint that already explains what's missing, instead of treating "nothing to click" as "done." A new e2e test drives the actual wizard buttons end to end on an empty plan and asserts the app stays put and explains itself — checked against the pre-fix code to confirm it actually fails without the fix, not only passes with it.
+
 ## First-run friction — measured and reduced 2026-08-19
 
 Reported plainly by the first person to use it rather than test it: *"האפליקציה מאוד לא נעימה למשתמש."* Measured on a Pixel 7 profile, first-run Stage 1, before any change:
