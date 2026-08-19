@@ -37,11 +37,20 @@ function readUsage(now = new Date()): UsageContext {
 }
 
 function persistUsage(usage: UsageContext, interactionCount = usage.interactionCount) {
-  localStorage.setItem(USAGE_KEY, JSON.stringify({
-    ...usage,
-    interactionCount,
-    lastVisitAt: new Date().toISOString(),
-  }));
+  // Usage telemetry is optional and only ever softens copy/density — it must
+  // never throw uncaught into the same debounced input/change/click path
+  // page.tsx's own (guarded) save runs on, or a full/blocked store turns a
+  // missed nudge into a second source of the same crash that guard exists
+  // to prevent.
+  try {
+    localStorage.setItem(USAGE_KEY, JSON.stringify({
+      ...usage,
+      interactionCount,
+      lastVisitAt: new Date().toISOString(),
+    }));
+  } catch {
+    // no-op — see above
+  }
 }
 
 export default function ContextLayer() {

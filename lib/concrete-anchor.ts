@@ -28,7 +28,14 @@ const EVALUATIVE_MARKERS = [
  */
 const ANCHOR_MARKERS = [
   'למשל', 'לדוגמה', 'לדוגמא', 'כאשר', 'אחרי ש', 'לפני ש', 'בעקבות',
-  'שיעור', 'תצפית', 'כיתה', 'גן', 'מפגש', 'פגישה', 'ישיבה', 'הדרכה',
+  'שיעור', 'תצפית',
+  // Deliberately NOT here: כיתה / גן / מפגש / פגישה / ישיבה / הדרכה. A battery
+  // of realistic reflective sentences (tests/concrete-anchor.test.ts) showed
+  // these are near-universal in this domain — "היה תהליך מצוין בכיתה" or
+  // "הייתה הדרכה משמעותית" names a *setting*, not a checkable fact, and
+  // would have silenced the R8 nudge on exactly the ungrounded-praise pattern
+  // it exists to catch (Q7). A real event verb, a number, a quote, or an
+  // explicit connector below still anchors a claim; the setting alone does not.
   'אמרה', 'אמר', 'ביקשה', 'ביקש', 'סיפרה', 'סיפר', 'שאלה', 'הראתה', 'הראה',
   'בחרה', 'בחר', 'יזמה', 'יזם', 'תכננה', 'תכנן', 'הפעילה', 'הפעיל',
   'פעמים', 'מתוך', 'לעומת', 'בשבוע', 'בחודש', 'ביום',

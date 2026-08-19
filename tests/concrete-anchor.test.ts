@@ -43,3 +43,15 @@ test('a month name is a time anchor', () => {
   assert.equal(hasConcreteAnchor('התהליך היה משמעותי מאז דצמבר'), true);
   assert.equal(needsConcreteAnchor('התהליך היה משמעותי מאז דצמבר'), false);
 });
+
+test('naming a generic setting is not a concrete anchor — this is the R8 pattern itself', () => {
+  // Found by running a battery of realistic reflective sentences against the
+  // real function: כיתה / מפגש / פגישה / הדרכה used to be in ANCHOR_MARKERS,
+  // which meant any evaluative sentence that happened to name where it took
+  // place silently passed as "anchored" without saying what actually
+  // happened — exactly the manager's Q7 example, just with a location word
+  // added. A setting is not a fact; nothing here is checkable.
+  assert.equal(needsConcreteAnchor('היה תהליך מצוין בכיתה, ממש שינוי משמעותי'), true);
+  assert.equal(needsConcreteAnchor('הייתה הדרכה משמעותית מאוד השבוע'), true);
+  assert.equal(needsConcreteAnchor('ראיתי שיפור מצוין אחרי הפגישה עם הצוות'), true);
+});

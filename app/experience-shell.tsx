@@ -13,7 +13,7 @@ import {
   Stage,
 } from '../lib/stages';
 import { calendarContext, greetingForDaypart } from '../lib/context-engine';
-import { readStoredState } from '../lib/state-storage';
+import { readStoredState, STORAGE_KEY } from '../lib/state-storage';
 
 type View = 'home' | 'work' | 'insight' | 'journey';
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
@@ -70,6 +70,16 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   }, []);
 
   const automaticStage = now ? stageFromDate(now) : stageFromDate();
+  // Regression: this used to fall back to 1 unconditionally, so the home
+  // screen confidently opened with "את בשלב תכנון" through October,
+  // November, March and April — months stageFromDate() deliberately returns
+  // null for, specifically so nothing here has to guess. page.tsx's own work
+  // view already refuses to invent a stage in exactly this situation (the
+  // gapShell screen); the home view silently did the opposite. `?? 1` still
+  // backs every OTHER view below so nothing there breaks without a chosen
+  // stage — only the home hero, the one screen she sees first, now asks
+  // instead of asserting.
+  const inCalendarGap = !state.manualStage && automaticStage === null;
   const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
   const calendar = now ? calendarContext(now, automaticStage) : null;
   const action = nextAction(state, activeStage);
@@ -83,6 +93,22 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const greeting = calendar ? greetingForDaypart(calendar.daypart) : 'שלום';
 
   const go = (next: View) => { refresh(); setView(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+  // Same write pattern page.tsx's own switchStage uses (read → patch →
+  // write back), done directly since this component owns no shared state
+  // with page.tsx's Home — they each read the same storage key independently.
+  const chooseStage = (stage: Stage) => {
+    const current = readStoredState();
+    // A full/blocked store must not throw uncaught here either — page.tsx's
+    // own guarded save is what surfaces the real notice; this one only
+    // needs to not crash the picker click itself.
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, manualStage: stage }));
+    } catch {
+      // no-op — see above
+    }
+    refresh();
+  };
 
   return (
     <div className={`experienceShell view-${view}`}>
@@ -100,7 +126,26 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
         <div className="experiencePrivacy">המידע נשאר במכשיר</div>
       </header>
 
-      {view === 'home' && (
+      {view === 'home' && inCalendarGap && (
+        <main className="experiencePage homeExperience">
+          <section className="homeHero">
+            <p className="homeGreeting">{greeting}{instructor ? `, ${instructor}` : ''}</p>
+            <h1>באיזה שלב בלוח השנה את נמצאת?</h1>
+            <p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p>
+          </section>
+          {/* Same class page.tsx's own gapShell buttons use — not homeGrid/
+              homeStatusCard, whose min-height and 2-column layout are sized
+              for the decision-card pairing elsewhere and visibly fight this
+              3-button choice for the same grid-template-columns. */}
+          <div className="gapOptions">
+            <button onClick={() => chooseStage(1)}><b>תכנון</b><span>עד סוף ספטמבר</span></button>
+            <button onClick={() => chooseStage(2)}><b>הערכה מעצבת</b><span>דצמבר–פברואר</span></button>
+            <button onClick={() => chooseStage(3)}><b>הערכה מסכמת</b><span>מאי–יוני</span></button>
+          </div>
+        </main>
+      )}
+
+      {view === 'home' && !inCalendarGap && (
         <main className="experiencePage homeExperience">
           <section className="homeHero">
             <p className="homeGreeting">{greeting}{instructor ? `, ${instructor}` : ''}</p>

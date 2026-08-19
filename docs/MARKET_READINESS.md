@@ -142,3 +142,63 @@ The SMART advisory checklist, the personalized Gantt, cadence detection and adju
 It also produced a regression, found on 2026-08-18 by the first person to actually try the form rather than test it. On part 1 the checklist rendered Measurable and Time-bound as warnings, though both are answered by fields two parts further on — so a first-time user filled the two fields in front of her, saw four orange misses she could not act on, pressed the prominent save button beneath them, and was told that מדדים and מסגרת זמן were missing from screens she had never seen. Nothing was technically broken; every test passed. The criteria now distinguish `pending` from `missing`, and a blocked save names which part holds each missing field.
 
 The lesson is the DoD's own thesis, arriving the hard way: **R1 is not a formality.** A flow can pass every automated check and still trap the person it was built for, and no amount of test coverage substitutes for watching one מדריכה use it.
+
+## Every remaining deviation theory, tested against the running app — swept 2026-08-19
+
+The wizard's finish button and the delete button (above) were two instances of one pattern: a מדריכה does something a script never would, and the app has no answer for it. Rather than wait for the next one to surface by accident, this pass worked through every scenario in that family that hadn't been driven live yet — reload, two tabs, a calendar edge case, a full store, out-of-order navigation, extreme input, an accessibility scan, a cold landing on `/org`, and a shared device. Each was driven against the real running app (Playwright, plus `@axe-core/playwright` for the scan) exactly as the wizard finding was — not inferred from reading `lib/` or `app/`.
+
+| Scenario | Result |
+|---|---|
+| Full or blocked `localStorage` (Safari private mode's zero quota) | 🔴 crashed the tab — fixed |
+| Two tabs open on the same plan | 🟠 silent overwrite — fixed |
+| A calendar gap month (Oct / Nov / Mar / Apr) | 🟠 asserted a stage instead of asking — fixed |
+| `axe-core` scan, all 3 stages | 🟠 3 confirmed violations — fixed |
+| A generic-setting sentence read as a concrete anchor | 🟠 false negative on R8's own pattern — fixed |
+| Landing cold on `/org` (a shared link or bookmark) | 🟡 explained nothing about where files come from — fixed |
+| A manually chosen stage, after reload / close-reopen | 🟡 silently discarded, unexplained — documented, not fixed |
+| Negation before a cadence word ("לא שבועית") | 🟡 known limitation, not a regression |
+| A shared device, several מדריכות | 🟡 mirror of an already-disclosed limitation — copy extended |
+| Wizard: back twice, edit, forward twice | 🟢 clean |
+| Extreme input: 3000-char paste, HTML/script-like text | 🟢 clean |
+
+### The worst of the sweep: a full store didn't just fail to save, it crashed the tab
+
+Confirmed live, not simulated in the abstract: with `localStorage` blocked the way Safari's private mode enforces (a real zero quota, so even the first write throws), typing a single character into any Stage 1 field ended the session — Chromium's own "This page couldn't load" screen, not an in-app error. The mechanism: `page.tsx`'s autosave effect calls `localStorage.setItem` on every state change with nothing catching the throw, so it re-fires and re-throws on every keystroke until the tab gives up. Two smaller write sites had the identical gap — `context-layer.tsx`'s usage telemetry and `experience-shell.tsx`'s stage picker — neither essential to keep working, both equally capable of taking the tab down with them.
+
+Fixed by wrapping all three in `try/catch`. The two optional ones fail silently (a missed density nudge or a picker click that didn't persist is not worth alarming her over); the one that matters — her plan not saving — surfaces a real notice: *"לא הצלחתי לשמור באופן אוטומטי כרגע — ייתכן שהאחסון בדפדפן מלא או חסום... כדאי להעתיק את מה שכתבת למקום אחר לפני שסוגרים את הדף."* A caught write can only fail to persist, which she is now actually told, instead of losing the tab.
+
+### Two tabs on the same plan overwrote each other in silence
+
+Confirmed with two real Playwright pages sharing one `localStorage`: neither tab knows about the other, so each one's next autosave replaces the whole stored object with whatever it last held in memory — the second tab to save wins, and the first tab's change is gone with no warning in either tab. This doesn't get a merge (that belongs with the parked R3/R7/R10 persistence work — a real store is the actual fix), but it no longer happens silently: the native `storage` event, which only fires in the *other* tab, now surfaces a notice there — *"התוכנית עודכנה בטאב אחר באותו דפדפן. שמירה כאן תחליף את מה ששונה שם..."* — before that tab's own next save can clobber it.
+
+### The home screen asserted a stage during a calendar gap, instead of asking
+
+`stageFromDate()` deliberately returns `null` across Oct/Nov and Mar/Apr — gap months between the pilot's windows — specifically so nothing has to guess. `page.tsx`'s own work view already honors that and shows a neutral picker. `ExperienceShell`'s home view, the first screen she sees, did not: it defaulted straight to `1` and opened confidently on *"את בשלב תכנון"* through two real gap months a year. Verified with `page.clock` across all 10 real boundary crossings a pilot year has — both edges of both gaps, both edges of both real windows, and the direct Stage-3-to-Stage-1 year rollover on July 1st, which correctly has no gap at all. Fixed to match `page.tsx`'s own behavior: during a gap it now asks — *"באיזה שלב בלוח השנה את נמצאת?"* with the same three-button picker — and the moment a real month begins, it goes back to asserting.
+
+**Found alongside it, and left as-is:** reload or close-and-reopen during a *real* month silently discards a manually chosen stage. `SessionStageReset` clears `manualStage` on every load by name and by design; confirmed live — switch to Stage 2, reload, and the home screen is back to *"את בשלב תכנון"* with nothing on screen explaining why. No work is lost (the plan/formative/summative content itself is saved independently of which tab is showing), only the navigation choice, but it is a real inconsistency. Whether a manual stage choice *should* survive a reload is a product decision about what `SessionStageReset` is for, not a bug in how it's implemented — parked here rather than patched around it.
+
+### `axe-core` found three confirmed violations across the three stages
+
+A real automated scanner, not a hand-picked checklist, run against all three stages with realistic saved state: **`color-contrast`** on `.saveWhen` (the hint text under a blocked save, introduced the same day as the wizard fix and never scanned) — darkened to meet AA; **`aria-prohibited-attr`** on the Gantt track, a bare `<div aria-label="…">`, which `role="generic"` does not permit an `aria-label` on — given `role="img"`; and **no `<h1>` anywhere in the work view**, then a jump straight to `<h3>`/`<h4>` the one time a heading was added — the three stage titles are now `<h1>`, with `FormSection`/`AssessmentSection`/`.contextHead`/the Stage 3 rubric cascaded to `<h2>` so nothing skips a level under them. `color-contrast` is deliberately **not** asserted at zero going forward: it's a real, pre-existing gap in `--muted` against light backgrounds across dozens of nodes app-wide, and fixing that properly is a design decision on the replacement color with visual sign-off, not an automated sweep — asserting it away here would hide that decision being skipped. Both new tests live in `tests/e2e/accessibility.spec.ts`.
+
+**One loose end, not chased further:** the scan also surfaced a hidden legacy `<h1>` inside `page.tsx`'s `.welcomeBlock` that coexists with the new stage `<h1>`s — correctly hidden from assistive tech in every check that matters (axe's own rules and a `:visible` count both agree there is exactly one live heading), so not a real accessibility defect, but worth a cleanup pass of its own.
+
+### A generic setting read as a concrete anchor — the R8 nudge's own blind spot
+
+R8 exists to catch *"היה תהליך משמעותי"* — praise with nothing checkable in it — and ask for an anchor. `ANCHOR_MARKERS` treated `כיתה` / `גן` / `מפגש` / `פגישה` / `ישיבה` / `הדרכה` as anchors, so *"היה תהליך מצוין בכיתה"* passed as anchored: it names a setting, not a fact, and is the manager's own Q7 example with one word added. Removed from the marker list; a real event verb, a number, a quote, or an explicit connector still anchors a claim, a setting alone no longer does.
+
+**Two adjacent findings in the same function, tested and left as documented limitations, not fixed:** negation isn't scanned for, so *"לא שבועית"* ("not weekly") still matches the token "שבועית" and reads as weekly cadence — a real fix needs to detect a preceding לא/אין without also breaking on *"לא רק שבועי אלא גם..."*, more complexity than a field that in practice states a cadence, not a rejected one, warrants. And bare *"שבועיים"* deliberately has no entry alongside bare *"שבועי"*: Hebrew has no single-word adjective for biweekly the way it does for weekly, and bare *"שבועיים"* overwhelmingly means the plain duration "two weeks," not a recurrence claim — mirroring the weekly entry would trade one false positive for a more common one.
+
+### Landing cold on `/org` explained nothing about where the files come from
+
+A מדריכה following a shared link or bookmark, never having seen the main app, hit a console that talks about "signal packages" with no explanation of what those are or where a file would come from. Header copy now says so directly: *"כל מדריכה מייצאת חבילת signal משלה מתוך 'מה למדנו' באפליקציה שלה — הקבצים לא נוצרים כאן."* Fixed alongside a small RTL spacing bug found in the same pass — the "← חזרה למדריכה" link had no end-margin and ran straight into the adjacent "תמונת מערכת" label.
+
+### A shared device undercounts the same way a changed device overcounts
+
+The console already discloses that its participant ID is per-device — *"מעבר למכשיר אחר עלול להיספר כמשתתפת חדשה."* The mirror case is the same root cause in the other direction: several מדריכות sharing one browser (a shared staff-room computer) would be counted as *one* participant, not several — undercounting where the disclosed case overcounts. No login system exists to fix this properly, and the copy already names the real fix as future work (*"חשבונות משתמשים יפתרו זאת בשלב הבא"*) — building one is out of this pilot's scope for the same reason R3/R7/R10 are parked, not a gap to patch around. The one thing worth doing now was making the disclosure honest in both directions, so the copy was extended to name the shared-device case explicitly rather than only the one that happened to be written down first.
+
+### Tested and came back clean
+
+Two theories were driven live and found nothing: going back twice in the Stage 1 wizard, editing an earlier answer, and going forward twice again keeps the part index and part count correctly synced at every step, and the edited field survives intact without clobbering a sibling field. And extreme input — a 3,000-character paste into a short field, and HTML/script-like text mixed with Hebrew, English, and special characters — saves correctly, renders with no unescaped HTML anywhere in the page, and raises no console error traceable to the input itself. Recorded here rather than left unmentioned, since silence on a tested theory reads the same as an untested one.
+
+**Suite after this pass: 107 unit tests, 21 e2e tests (6 new — 2 accessibility, 4 instructor), all 3 contract checks, readiness unchanged at 6/8.** None of this closes a new DoD row; every fix here is the same category as the wizard button and the delete friction — the product staying honest about its own limits instead of failing silently — and is recorded here for the same reason those were.

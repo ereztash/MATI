@@ -204,3 +204,85 @@ test('deleting local data takes two real clicks and names what is actually at st
   await expect.poll(async () => (await readStored(page)).plan?.savedAt).toBeUndefined();
   expect(dialogs).toEqual([]);
 });
+
+test('the home screen asks which stage you are in during a calendar gap, instead of asserting one', async ({ page }) => {
+  // Regression: ExperienceShell defaulted activeStage to 1 whenever neither
+  // a manual choice nor stageFromDate() had an answer — which during a real
+  // gap month (Oct/Nov/Mar/Apr, verified live with page.clock across all
+  // four) meant confidently opening on "את בשלב תכנון" even though
+  // stageFromDate() deliberately returns null there specifically so nothing
+  // has to guess. page.tsx's own work view already refuses to invent a stage
+  // in this exact situation; the home view — the first screen she sees —
+  // silently did the opposite. Fixed by asking instead, same copy and
+  // pattern as the existing gapShell screen.
+  await page.clock.install({ time: new Date('2026-10-01T10:00:00') });
+  await page.goto('/');
+  await expect(page.locator('h1')).toHaveText('באיזה שלב בלוח השנה את נמצאת?');
+  await expect(page.locator('.gapOptions button')).toHaveCount(3);
+
+  await page.locator('.gapOptions button', { hasText: 'הערכה מעצבת' }).click();
+  await expect(page.locator('h1')).toContainText('הערכה מעצבת');
+  await expect.poll(async () => (await readStored(page)).manualStage).toBe(2);
+});
+
+test('a real month is never shown the gap picker', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-12-15T10:00:00') });
+  await page.goto('/');
+  await expect(page.locator('.gapOptions button')).toHaveCount(0);
+  await expect(page.locator('h1')).toContainText('הערכה מעצבת');
+});
+
+test('a change made in another tab surfaces here instead of being silently overwritten', async ({ page, context }) => {
+  // Regression: two tabs sharing one plan have no merge — this tab's own
+  // next write replaces the whole stored object with whatever it last held
+  // in memory, silently erasing a field the other tab just changed, with no
+  // warning in either tab (confirmed live with two real pages before this
+  // fix existed). The native `storage` event fires only in *other* tabs,
+  // which is exactly the signal used here — this does not solve merging
+  // (that belongs with the parked R3/R7/R10 persistence work) but it does
+  // mean it's never silent.
+  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+  await expect(page.locator('.notice')).toHaveCount(0);
+
+  const otherTab = await context.newPage();
+  await otherTab.goto('/');
+  await otherTab.evaluate((key) => {
+    const s = JSON.parse(localStorage.getItem(key) ?? '{}');
+    s.plan.flexibility = 'שונה מטאב אחר';
+    localStorage.setItem(key, JSON.stringify(s));
+  }, STORAGE_KEY);
+
+  await expect(page.locator('.notice p')).toContainText('התוכנית עודכנה בטאב אחר');
+  // The tab that made the change is not told anything about its own write.
+  await expect(otherTab.locator('.notice')).toHaveCount(0);
+  await otherTab.close();
+});
+
+test('a blocked or full store degrades to a notice, not a crash', async ({ page }) => {
+  // Regression, and the most severe finding of this pass: a full/blocked
+  // localStorage (Safari private browsing enforces a zero quota, so even
+  // the first write throws QuotaExceededError) used to escape uncaught from
+  // page.tsx's persistence effect on every keystroke. Confirmed live before
+  // this fix: it didn't just fail to save — the tab's renderer actually
+  // crashed (Chromium's own "This page couldn't load" screen), because the
+  // effect re-fires and re-throws on every character typed. A caught write
+  // can only fail to persist, which she is now actually told.
+  await page.goto('/');
+  await nav(page, 'עבודה');
+  await page.evaluate(() => {
+    const real = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === 'mati-v2') throw new DOMException('quota exceeded', 'QuotaExceededError');
+      return real.call(this, key, value);
+    };
+  });
+
+  const field = page.locator('.field', { hasText: 'מי צוותי המוקד' }).locator('input');
+  await field.fill('טקסט בזמן שהאחסון חסום');
+
+  await expect(page.locator('.notice p')).toContainText('לא הצלחתי לשמור באופן אוטומטי');
+  // The tab must still be alive and usable — not the browser's own crash page.
+  await expect(field).toHaveValue('טקסט בזמן שהאחסון חסום');
+});
