@@ -25,7 +25,7 @@ The planning window (יולי–ספטמבר) is the only chance this year to st
 
 | # | Criterion | Layer | Check | Status |
 |---|---|---|---|---|
-| R1 | A מדריכה who has never seen MATI completes a work plan alone, on her own phone, without training | שימוש | human | ❌ never observed |
+| R1 | A מדריכה who has never seen MATI completes a work plan alone, on her own phone, without training | שימוש | human | ❌ never observed — protocol ready, see `docs/r1-session-protocol.html` |
 | R2 | Her work survives closing the browser and restarting the device | שימוש | auto | ✅ verified 2026-08-18 |
 | R3 | She has a way to recover her work if the browser/device is wiped | שימוש | auto | ⏸️ parked 2026-08-18 |
 | R4 | Changes to a saved plan are recorded as before/after, not silently overwritten | שינוי | auto | ✅ built 2026-08-18 |
@@ -36,6 +36,19 @@ The planning window (יולי–ספטמבר) is the only chance this year to st
 
 - **R4 — closed 2026-08-18.** She said it twice, unprompted: *"היא משנה משהו שתכננה"* (Q2) and *"המערכת צריכה לשמור שינויים בתוכנית לאורך זמן"* (Q4). `savePlan` used to overwrite in place, so a plan changed in November was indistinguishable from one written that way in August — the pilot's own success criterion was not hard to measure but *impossible*. Each save now diffs against the previous saved version and keeps the before/after (`lib/plan-revisions.ts`), and the instructor sees what she changed and when. Only substantive plan fields count: Gantt date nudges and the socratic self-answers are excluded, so the change signal is not inflated by the very product measuring it.
 - **R5 — closed 2026-08-18.** Q20: the one thing a מדריכה must understand in advance so she can answer honestly is *"שהרפלקציה לא משמשת לדירוג שלה."* Honest answers are the input to everything else, so this is load-bearing, not copywriting. Stated in two places: persistently in the header beside the storage note, and again in full at the top of Stage 2 — immediately before the nine sections where she is asked to write candidly about her own work.
+
+## R1 — how it actually closes
+
+`docs/r1-session-protocol.html` is the field protocol: who to invite, the message to send, a verbatim opening script, four silence rules, an observation sheet tied to the failure points already known, and four closing questions.
+
+Two rules in it matter more than the rest, because they are what makes the result mean anything:
+
+- **The pass criteria are committed before the session, not after.** R1 passes only if she reached a saved plan *and* no question about how to use the tool was answered. Deciding afterwards is how a criterion gets retired without being earned.
+- **Do not invite the enthusiast.** The most tech-comfortable מדריכה will pass the form easily and hand back a false positive, which is worse than no data at all.
+
+A failed run is a good outcome — it names where the product breaks and costs an hour. The only bad outcome is the session never happening, and the way that happens is waiting to do it properly with five people in November.
+
+The closing question *"אם זה היה נתקע לך בבית, למי היית פונה?"* also produces the answer to **R6**.
 
 ## The persistence family — parked 2026-08-18
 
