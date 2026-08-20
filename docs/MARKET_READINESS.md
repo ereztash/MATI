@@ -335,7 +335,9 @@ These are characterisation tests, and the distinction matters. The cut-offs they
 
 ### What the scoring model turned out to do
 
-Writing the tests surfaced a property worth a decision rather than a test. In `scoreDimensions`, **an honest low answer scores worse than no answer at all**: reporting 0% implementation gives 4 stars where leaving the field blank gives 5, because a blank is skipped by `averagePresent` while a zero is averaged in. The same holds for "לא ביקשתי משוב מהצוות" and for meeting none of the planned manager sessions. A mirror that rewards silence over an honest low number is not obviously what was intended; the behaviour is now pinned and named in `tests/stages.test.ts` rather than sitting unremarked in an average.
+Writing the tests surfaced a property worth a decision rather than a test. In `scoreDimensions`, **an honest low answer scored worse than no answer at all**: reporting 0% implementation gave 4 stars where leaving the field blank gave 5, because a blank was skipped by `averagePresent` while a zero was averaged in. The same held for "לא ביקשתי משוב מהצוות" and for meeting none of the planned manager sessions. A mirror that rewards silence over an honest low number is not obviously what was intended, so it was written down here rather than left sitting unremarked in an average.
+
+> **Superseded.** This was raised as a decision and then fixed — see *The mirror punished honesty* below, and *Re-reviewing that fix* after it. `averagePresent` no longer exists; `tests/stages.test.ts` now asserts the opposite of what this paragraph describes. The paragraph is kept because the finding is part of the record, not because it describes the code.
 
 ### What was closed
 
@@ -357,7 +359,7 @@ Writing the tests surfaced a property worth a decision rather than a test. In `s
 
 | Where | Why no input reaches it |
 | --- | --- |
-| `stages.ts` `rangeScore`, `averagePresent` | Differ only for a value outside the map, or for `NaN`; every caller passes a closed union or a clamped ratio, and `undefined`/`null` are filtered identically. |
+| `stages.ts` `rangeScore`, `evidenceNorm` | Differ only for a value outside the map, or for `NaN`; every caller passes a closed union or a clamped ratio, and `undefined`/`null` are treated identically. (`evidenceNorm` was named `averagePresent` when this table was written.) |
 | `stages.ts` `summarizeLongText` | `summary` is sliced to 240 and only computed when the text exceeds 360, so the comparison is always true. |
 | `context-engine.ts` stage position | Differs only when the ratio is *exactly* 0.28 — one millisecond in a 92-day window. |
 | `context-engine.ts` `numeric` | Returns `0` instead of `null` for an empty string; its only caller tests `>= 80`. |
@@ -411,3 +413,45 @@ Scores drop where the data is thin. Two metrics defined and nothing else was 5/5
 The cost is granularity: one answer is now a quarter or a fifth of its dimension rather than the whole of the answered subset, so a single answer moves the four-level star display less. One consequence showed up immediately in the mutation sweep — the `teamFeedbackAsked === 'yes'` direction, previously pinned, became invisible because "asked" and "did not ask" now round to the same star beside a lone `managers` field. It is pinned again on a state where the difference actually separates, rather than left to the rounding.
 
 **Suite after this pass: 162 unit tests, 25 e2e tests, four contract checks in CI, chaos green, 94/97 mutants killed in `lib/stages.ts`, readiness unchanged at 6/8.**
+
+## Re-reviewing that fix — five more things, 2026-08-20
+
+The honesty fix above was itself put through review. Nine findings; all nine reproduced against the running library or a browser before anything was changed. Six are fixed here, two are open decisions, one was a duplicate.
+
+### The guarantee I had just written down was still false
+
+The property asserted in the previous section — *no answer she can give anywhere scores worse than not answering at all* — did not hold. `selfEffectivenessAverage` is a **mean over the scales she rated**, and `scoreDimensions` fed that mean into the fixed-denominator norm. The variable denominator was still there, one level down.
+
+Measured: `{metric1, metric2, q9.goals: 10}` scored 4/5 on מדדים כמותיים; honestly rating two further self-effectiveness scales at 1 dropped it to **3/5**. Exactly the behaviour the commit above claims to remove.
+
+`selfEffectivenessAverage` itself is not wrong — it is displayed under the section as "הממוצע מחושב אוטומטית", and a mean over what she rated is what that number should be. The fix is a separate `selfEffectivenessNorm` for *scoring*: the sum of her ratings over everything she could have rated, so an unrated scale contributes nothing and rating one can only add.
+
+**The exhaustive property test could not see it, twice over.** First because its table collapsed q9's five scales into a single `goals` row, so a second low rating — the only thing that can drag a mean — was never set. Then, after adding the other four scales as their own rows, it *still* passed against the unfixed code: the baseline "every other input at its best" **saturates**, and with four of five slots already contributing 1, the drop in the fifth is swallowed by the rounding to stars. It now runs against three baselines — nothing else answered, everything else at its best, and only this question answered — and the sparse third one is what catches it. Verified by reverting the fix: `מדדים כמותיים (only this question answered): answering "1" scored 2 where staying silent scored 3`.
+
+That is the third time in this document that a test's blind spot was the shape of its baseline. It is worth naming as a pattern rather than a series of accidents: **a property test is only as good as the states it starts from**, and "fill everything in" is not a neutral starting state — it is the one where individual contributions stop being visible.
+
+### The mirror contradicted itself on screen
+
+`strongest` and `lowest` were each computed by sorting the same array on score alone — descending for one, ascending for the other. `Array#sort` is stable, so when every dimension carried the same score **both returned the same element.** Confirmed in a browser: a complete saved plan (all five at 3/5) rendered
+
+> **מה חזק כרגע:** רפלקציה ולמידה  **הפער שכדאי לבדוק:** רפלקציה ולמידה
+
+in two adjacent cards. Pre-existing, but the fixed denominator compressed the spread and made an all-five tie ordinary rather than rare — a plain complete plan now produces one. There is now a single `rankDimensions` used by the home screen, the Mirror, `recommendedActions` and `rubricForNextYear`, tie-breaking on evidence count and then name, so the two can never name the same dimension and all four surfaces agree.
+
+### A single space counted as evidence
+
+Every presence check in `scoreDimensions` tested raw truthiness. `{plan.flexibility: '   ', q8.centralMistake: ' ', q8.flexibilityReflection: '\t'}` scored **4/5 with three evidence lines** for text she never wrote. `planReady`, `hasValue` and `smartGoalLooksValid` all trim; these did not. They go through `hasValue` now — the same state scores 2/5 with no evidence.
+
+### Also fixed
+
+`selfEffectivenessAverage` was recomputed three times inside one block of a function that already runs several times per render. `evidenceNorm`'s empty-array guard was unreachable — every call site passes a literal array of four or five — which in a pass about killing mutants had quietly added a permanent survivor. A duplicated assertion in `tests/concrete-anchor.test.ts` meant one behaviour change would fail two tests in two places. And the section above titled *What the scoring model turned out to do* still described the penalty in the present tense and pointed at a test that now asserts the opposite; it carries a superseded note, and the equivalent-mutant table no longer names a function that was deleted.
+
+### Two left open, because they are decisions rather than bugs
+
+**The denominator is route-blind.** A mentor on the short route (מסלול ממוקד) who answers *every question her route asks* at the best possible value, on a full plan, gets `5,4,4,3,4` while `formativeCompletion` tells her she is at **100%**. מערכת ואחריות is capped at 3/5 because four of its five inputs live in q6, which the short route never renders — so it is structurally her weakest dimension forever, and `recommendedActions` hands every short-route mentor the same manager-conversation advice regardless of her data. The same shape at Stage 1: a complete saved plan scores 3/5 on all five, under copy that says "הדירוג מתייחס לראיות שנמצאות בתוכנית", with no action on that screen able to raise it.
+
+**One answer often no longer moves the star.** With `plan.managers` filled and nothing else in q6, "ביקשתי משוב מהצוות", "לא ביקשתי" and no answer all render 3/5 (norms 0.40 / 0.24 / 0.20, all rounding to 3). Removing the penalty on "no" also removed the reward for "yes".
+
+Both follow from the same choice — a fixed denominator over *all* the instrument's inputs — and both would be resolved by scoring each dimension over the inputs her route actually asks for, showing a dimension whose evidence her route never collects as **"לא נמדד במסלול הזה"** rather than as a low score, and keeping it out of "the gap worth checking" since it is a gap in what she was asked, not in her practice. That is a decision about what the short route means pedagogically, so it is written down here rather than chosen unilaterally.
+
+**Suite after this pass: 163 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**

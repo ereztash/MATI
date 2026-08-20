@@ -5,7 +5,7 @@ import {
   GAP_ANSWER_MAX_AGE_DAYS, hasLargeGoalResultGap,
   implementationStatus, MatiState, planReady, planSaved, ratioPercent, recommendedActions, resolveStage, scoreDimensions,
   rubricForNextYear, selfEffectivenessAverage, smartGoalLooksValid, stage2SectionStarted, stageFromDate,
-  stageLockReason, stageWindowLabel, summarizeLongText,
+  rankDimensions, stageLockReason, stageWindowLabel, summarizeLongText,
 } from '../lib/stages';
 import { migrateState } from '../lib/state-storage';
 
@@ -181,6 +181,35 @@ test('recommendedActions returns at most three distinct suggestions', () => {
   }));
   assert.ok(actions.length > 0 && actions.length <= 3);
   assert.equal(new Set(actions).size, actions.length);
+});
+
+test('the strongest dimension and the gap worth checking are never the same one', () => {
+  // Both were picked by sorting on score alone, ascending for one and
+  // descending for the other. Array#sort is stable, so an all-equal set
+  // returned the SAME element from both. Confirmed in a browser before this
+  // fix: a complete saved plan (all five at 3/5) printed "מה חזק כרגע:
+  // רפלקציה ולמידה" directly beside "הפער שכדאי לבדוק: רפלקציה ולמידה".
+  const flat = state({ plan: {
+    ...fullPlan, savedAt: '2026-01-01T00:00:00.000Z',
+    flexibility: 'נקודת גמישות', managers: 'מנהלת בית הספר', independence: 'ביצוע עצמאי',
+  } });
+  const scores = scoreDimensions(flat).map((d) => d.score);
+  assert.equal(new Set(scores).size, 1, 'this fixture is only interesting while every dimension ties');
+
+  const { strongest, weakest } = rankDimensions(scoreDimensions(flat));
+  assert.notEqual(strongest.name, weakest.name);
+
+  // The empty state ties on evidence count as well as on score, which is the
+  // case a score-and-evidence tie-break alone would still collide on.
+  const blank = rankDimensions(scoreDimensions(emptyState));
+  assert.notEqual(blank.strongest.name, blank.weakest.name);
+
+  // And where the picture is not flat, the ordering is the obvious one.
+  const uneven = scoreDimensions(state({
+    plan: { ...fullPlan, savedAt: '2026-01-01T00:00:00.000Z', flexibility: 'נקודה' },
+    formative: { answers: { q8: { centralMistake: 'טעות', flexibilityReflection: 'רפל' }, q5: { adaptations: 'over4' } } },
+  }));
+  assert.equal(rankDimensions(uneven).strongest.name, 'רפלקציה ולמידה');
 });
 
 test('the advice she is given is the advice her own answers earned', () => {
@@ -543,7 +572,16 @@ const SCORED_INPUTS: Array<{ dimension: string; values: string[]; answer: (value
   { dimension: 'מדדים כמותיים', values: ['מדד'], answer: (v) => ({ plan: { metric2: v } }) },
   { dimension: 'מדדים כמותיים', values: ['0', '1', '50', '100'], answer: (v) => ({ formative: { answers: { q1: { implementationPercent: v } } } }) },
   { dimension: 'מדדים כמותיים', values: ['0', '5', '10'], answer: (v) => ({ formative: { answers: { q4: { targetStudents: '10', improvedStudents: v } } } }) },
+  // All five q9 scales, as five rows rather than one. Collapsing them into a
+  // single `goals` row is what let the same variable-denominator penalty hide
+  // one level down: selfEffectivenessAverage is a mean over the scales she
+  // answered, so it could only be dragged down by a second low rating, and a
+  // table that never set a second rating could never drag it.
   { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { goals: Number(v) } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { implementation: Number(v) } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { teacherChange: Number(v) } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { studentImpact: Number(v) } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { sustainability: Number(v) } } } }) },
   { dimension: 'לוח זמנים ויישום', values: ['ספטמבר–ינואר'], answer: (v) => ({ plan: { timeframe: v } }) },
   { dimension: 'לוח זמנים ויישום', values: ['under70', '70-90', '90-100'], answer: (v) => ({ formative: { answers: { q3: { meetingRate: v } } } }) },
   { dimension: 'לוח זמנים ויישום', values: ['0', '5', '10'], answer: (v) => ({ formative: { answers: { q5: { plannedHours: '10', actualHours: v } } } }) },
@@ -588,16 +626,36 @@ test('no answer she can give anywhere scores worse than not answering at all', (
   // presence. A metric that goes down when you add information teaches the
   // person reading it to add none.
   const best = (input: typeof SCORED_INPUTS[number]) => input.answer(input.values[input.values.length - 1]);
+  /** 'plan', or the formative question an input belongs to — derived, not restated. */
+  const groupOf = (input: typeof SCORED_INPUTS[number]) => {
+    const shape = input.answer(input.values[0]) as { plan?: unknown; formative?: { answers: Record<string, unknown> } };
+    return shape.plan ? 'plan' : `formative.${Object.keys(shape.formative?.answers ?? {})[0]}`;
+  };
 
   SCORED_INPUTS.forEach((input, index) => {
     const siblings = SCORED_INPUTS.filter((other, i) => i !== index && other.dimension === input.dimension);
-    const withoutThisAnswer = siblings.reduce<Record<string, unknown>>((acc, other) => mergeDeep(acc, best(other)), {});
-    const silent = scoreOf(state(withoutThisAnswer), input.dimension);
+    const sameQuestion = siblings.filter((other) => groupOf(other) === groupOf(input));
 
-    for (const value of input.values) {
-      const answered = scoreOf(state(mergeDeep(structuredClone(withoutThisAnswer), input.answer(value))), input.dimension);
-      assert.ok(answered >= silent,
-        `${input.dimension}: answering ${JSON.stringify(value)} scored ${answered} where staying silent scored ${silent}`);
+    // Three baselines, because the shape of the baseline decides what the test
+    // can see. "Everything else at its best" SATURATES: with four of five
+    // inputs already contributing 1, a drop in the fifth is swallowed by the
+    // rounding to stars, and a two-baseline version of this test passed against
+    // the q9 penalty it was written to catch. "Only this question answered" is
+    // the sparse case where a single input still moves the star, and is the one
+    // that catches a mean hiding inside one of the five slots.
+    const baselines: Array<[string, Record<string, unknown>]> = [
+      ['nothing else answered', {}],
+      ['everything else at its best', siblings.reduce<Record<string, unknown>>((acc, other) => mergeDeep(acc, best(other)), {})],
+      ['only this question answered', sameQuestion.reduce<Record<string, unknown>>((acc, other) => mergeDeep(acc, best(other)), {})],
+    ];
+
+    for (const [label, baseline] of baselines) {
+      const silent = scoreOf(state(structuredClone(baseline)), input.dimension);
+      for (const value of input.values) {
+        const answered = scoreOf(state(mergeDeep(structuredClone(baseline), input.answer(value))), input.dimension);
+        assert.ok(answered >= silent,
+          `${input.dimension} (${label}): answering ${JSON.stringify(value)} scored ${answered} where staying silent scored ${silent}`);
+      }
     }
   });
 });

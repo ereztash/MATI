@@ -233,10 +233,30 @@ function rangeScore(value: string, map: Record<string, number>) { return value &
  * `rangeScore` returns null for an unanswered option — and count as zero.
  */
 function evidenceNorm(values: Array<number | null | undefined>) {
-  if (!values.length) return 0;
   const total = values.reduce<number>((sum, v) => sum + (typeof v === 'number' && Number.isFinite(v) ? v : 0), 0);
   return total / values.length;
 }
+/**
+ * q9's five scales, as a share of everything she could have rated.
+ *
+ * NOT `selfEffectivenessAverage`, which is a mean over the scales she answered
+ * and is exactly right for the number shown under the section — if she rated
+ * three scales, the average of those three is what she asked for.
+ *
+ * Feeding that mean into a fixed-denominator norm reintroduced the same
+ * variable-denominator penalty one level down, and the exhaustive property test
+ * could not see it because it only ever set one q9 field, so the inner average
+ * never had more than one member. Measured: `{metric1, metric2, q9.goals: 10}`
+ * scored 4/5; honestly rating two further scales at 1 dropped it to 3/5.
+ * An unrated scale contributes nothing here, so rating one can only add.
+ */
+const SELF_EFFECTIVENESS_SCALES = 5;
+const SELF_EFFECTIVENESS_MAX = 10;
+function selfEffectivenessNorm(state: MatiState) {
+  const values = Object.values(state.formative.answers.q9).filter((v): v is Exclude<Scale10, null> => typeof v === 'number');
+  return values.reduce((sum, v) => sum + v, 0) / (SELF_EFFECTIVENESS_SCALES * SELF_EFFECTIVENESS_MAX);
+}
+
 function toStars(normalized: number) { return Math.max(2, Math.min(5, Math.round(2 + normalized * 3))); }
 
 export type Dimension = { name: string; score: number; note: string; evidence: string[]; };
@@ -247,21 +267,24 @@ export function scoreDimensions(state: MatiState): Dimension[] {
   const managerPct = managerMeetingPercent(state);
   const studentPct = studentImprovementPercent(state);
   const impl = num(a.q1.implementationPercent);
+  // Hoisted: this was recomputed three times inside the quantitative block, and
+  // scoreDimensions itself runs several times per render.
+  const selfAvg = selfEffectivenessAverage(state);
 
-  const reflectionEvidence = [state.plan.flexibility && 'הוגדרה מראש נקודת גמישות', a.q5.adaptations && a.q5.adaptations !== '0' && 'בוצעו התאמות בעקבות צורך או משוב', a.q8.centralMistake && 'נוסחה טעות מרכזית ולמידה ממנה', a.q8.flexibilityReflection && 'קיימת רפלקציה על גמישות וקשיחות'].filter(Boolean) as string[];
-  const reflectionNorm = evidenceNorm([state.plan.flexibility ? 1 : 0, a.q5.adaptations ? (a.q5.adaptations === '0' ? 0.2 : 0.8) : null, a.q8.centralMistake ? 1 : null, a.q8.flexibilityReflection ? 1 : null]);
+  const reflectionEvidence = [hasValue(state.plan.flexibility) && 'הוגדרה מראש נקודת גמישות', a.q5.adaptations && a.q5.adaptations !== '0' && 'בוצעו התאמות בעקבות צורך או משוב', hasValue(a.q8.centralMistake) && 'נוסחה טעות מרכזית ולמידה ממנה', hasValue(a.q8.flexibilityReflection) && 'קיימת רפלקציה על גמישות וקשיחות'].filter(Boolean) as string[];
+  const reflectionNorm = evidenceNorm([hasValue(state.plan.flexibility) ? 1 : 0, a.q5.adaptations ? (a.q5.adaptations === '0' ? 0.2 : 0.8) : null, hasValue(a.q8.centralMistake) ? 1 : null, hasValue(a.q8.flexibilityReflection) ? 1 : null]);
 
-  const quantitativeEvidence = [state.plan.metric1 && 'הוגדר מדד הצלחה ראשון', state.plan.metric2 && 'הוגדר מדד הצלחה שני', impl !== null && `דווח אחוז מימוש: ${impl}%`, studentPct !== null && `שיפור תלמידים מחושב: ${studentPct}%`, selfEffectivenessAverage(state) !== null && 'קיים דירוג אפקטיביות עצמי מספרי'].filter(Boolean) as string[];
-  const quantitativeNorm = evidenceNorm([state.plan.metric1 ? 1 : 0, state.plan.metric2 ? 1 : 0, impl !== null ? Math.min(1, impl / 100) : null, studentPct !== null ? Math.min(1, studentPct / 100) : null, selfEffectivenessAverage(state) !== null ? Math.min(1, (selfEffectivenessAverage(state) ?? 0) / 10) : null]);
+  const quantitativeEvidence = [hasValue(state.plan.metric1) && 'הוגדר מדד הצלחה ראשון', hasValue(state.plan.metric2) && 'הוגדר מדד הצלחה שני', impl !== null && `דווח אחוז מימוש: ${impl}%`, studentPct !== null && `שיפור תלמידים מחושב: ${studentPct}%`, selfAvg !== null && 'קיים דירוג אפקטיביות עצמי מספרי'].filter(Boolean) as string[];
+  const quantitativeNorm = evidenceNorm([hasValue(state.plan.metric1) ? 1 : 0, hasValue(state.plan.metric2) ? 1 : 0, impl !== null ? Math.min(1, impl / 100) : null, studentPct !== null ? Math.min(1, studentPct / 100) : null, selfEffectivenessNorm(state)]);
 
-  const implementationEvidence = [state.plan.timeframe && 'הוגדרה מסגרת זמן', a.q3.meetingRate && 'נמדדה תדירות המפגשים', fieldPct !== null && `מימוש שעות שטח: ${fieldPct}%`, a.q3.depth && 'תועד עומק היישום בשטח'].filter(Boolean) as string[];
-  const implementationNorm = evidenceNorm([state.plan.timeframe ? 1 : 0, rangeScore(a.q3.meetingRate, { under70: .35, '70-90': .75, '90-100': .95 }), fieldPct !== null ? Math.min(1, fieldPct / 100) : null, rangeScore(a.q3.depth, { partial: .4, shallow: .45, consistent: 1 })]);
+  const implementationEvidence = [hasValue(state.plan.timeframe) && 'הוגדרה מסגרת זמן', a.q3.meetingRate && 'נמדדה תדירות המפגשים', fieldPct !== null && `מימוש שעות שטח: ${fieldPct}%`, a.q3.depth && 'תועד עומק היישום בשטח'].filter(Boolean) as string[];
+  const implementationNorm = evidenceNorm([hasValue(state.plan.timeframe) ? 1 : 0, rangeScore(a.q3.meetingRate, { under70: .35, '70-90': .75, '90-100': .95 }), fieldPct !== null ? Math.min(1, fieldPct / 100) : null, rangeScore(a.q3.depth, { partial: .4, shallow: .45, consistent: 1 })]);
 
-  const systemEvidence = [state.plan.managers && 'הוגדרה מעורבות מנהלים נדרשת', a.q6.teamFeedbackAsked === 'yes' && 'נאסף משוב שיטתי מהצוות', managerPct !== null && `מימוש פגישות מנהלים: ${managerPct}%`, a.q6.resourcesAllocated && 'תועד מצב הקצאת המשאבים', a.q6.culturePositiveSign && 'תועד סימן לשינוי בתרבות הארגונית'].filter(Boolean) as string[];
-  const systemNorm = evidenceNorm([state.plan.managers ? 1 : 0, a.q6.teamFeedbackAsked ? (a.q6.teamFeedbackAsked === 'yes' ? 1 : .2) : null, managerPct !== null ? Math.min(1, managerPct / 100) : null, rangeScore(a.q6.resourcesAllocated, { no: .2, partial: .6, yes: 1 }), a.q6.culturePositiveSign ? 1 : null]);
+  const systemEvidence = [hasValue(state.plan.managers) && 'הוגדרה מעורבות מנהלים נדרשת', a.q6.teamFeedbackAsked === 'yes' && 'נאסף משוב שיטתי מהצוות', managerPct !== null && `מימוש פגישות מנהלים: ${managerPct}%`, a.q6.resourcesAllocated && 'תועד מצב הקצאת המשאבים', hasValue(a.q6.culturePositiveSign) && 'תועד סימן לשינוי בתרבות הארגונית'].filter(Boolean) as string[];
+  const systemNorm = evidenceNorm([hasValue(state.plan.managers) ? 1 : 0, a.q6.teamFeedbackAsked ? (a.q6.teamFeedbackAsked === 'yes' ? 1 : .2) : null, managerPct !== null ? Math.min(1, managerPct / 100) : null, rangeScore(a.q6.resourcesAllocated, { no: .2, partial: .6, yes: 1 }), hasValue(a.q6.culturePositiveSign) ? 1 : null]);
 
-  const independenceEvidence = [state.plan.independence && 'הוגדרה מראש עצמאות רצויה', a.q2.frequency === 'independent' && 'המודרך מיישם באופן עצמאי ועקבי', a.q7.independence && 'נמדדה עצמאות בסיום התהליך', a.q7.continuesWithoutDependency && 'נבדקה המשכיות ללא תלות גבוהה במדריכה'].filter(Boolean) as string[];
-  const independenceNorm = evidenceNorm([state.plan.independence ? 1 : 0, rangeScore(a.q2.frequency, { rarely: .2, sometimes: .45, regular: .75, independent: 1 }), rangeScore(a.q7.independence, { none: .1, partial: .45, most: .8, all: 1 }), rangeScore(a.q7.continuesWithoutDependency, { no: .15, partial: .55, yes: 1 })]);
+  const independenceEvidence = [hasValue(state.plan.independence) && 'הוגדרה מראש עצמאות רצויה', a.q2.frequency === 'independent' && 'המודרך מיישם באופן עצמאי ועקבי', a.q7.independence && 'נמדדה עצמאות בסיום התהליך', a.q7.continuesWithoutDependency && 'נבדקה המשכיות ללא תלות גבוהה במדריכה'].filter(Boolean) as string[];
+  const independenceNorm = evidenceNorm([hasValue(state.plan.independence) ? 1 : 0, rangeScore(a.q2.frequency, { rarely: .2, sometimes: .45, regular: .75, independent: 1 }), rangeScore(a.q7.independence, { none: .1, partial: .45, most: .8, all: 1 }), rangeScore(a.q7.continuesWithoutDependency, { no: .15, partial: .55, yes: 1 })]);
 
   return [
     { name: 'רפלקציה ולמידה', score: toStars(reflectionNorm), note: 'בקרה עצמית, גמישות ושינוי בעקבות תובנות', evidence: reflectionEvidence },
@@ -311,8 +334,34 @@ export function hasLargeGoalResultGap(state: MatiState) {
   return Boolean(lowGoal && ((impl !== null && impl < 60) || (avg !== null && avg < 5.5)));
 }
 
+/**
+ * One ordering for "what looks strongest" and "the gap worth checking", so the
+ * two can never name the same dimension.
+ *
+ * They could, and did. Both callers sorted the same array by score alone —
+ * ascending for the gap, descending for the strength — and `Array#sort` is
+ * stable, so when every dimension carried the same score both sorts returned
+ * the SAME element. Verified in a browser: a complete saved plan (all five at
+ * 3/5) rendered "מה חזק כרגע: רפלקציה ולמידה" beside "הפער שכדאי לבדוק:
+ * רפלקציה ולמידה". A mirror that contradicts itself in two adjacent cards is
+ * not a mirror she can use.
+ *
+ * The tie-breaks are meaningful rather than arbitrary: at equal stars, the
+ * dimension carrying more concrete evidence reads as the stronger one, and the
+ * name is a last resort so the answer is at least stable between renders.
+ */
+export function rankDimensions(dimensions: Dimension[]) {
+  const byStrength = [...dimensions].sort((a, b) =>
+    b.score - a.score || b.evidence.length - a.evidence.length || a.name.localeCompare(b.name, 'he'));
+  return {
+    byStrength,
+    strongest: byStrength[0],
+    weakest: byStrength[byStrength.length - 1],
+  };
+}
+
 export function recommendedActions(state: MatiState) {
-  const dims = [...scoreDimensions(state)].sort((a, b) => a.score - b.score); const lowest = dims[0]?.name; const actions: string[] = [];
+  const lowest = rankDimensions(scoreDimensions(state)).weakest?.name; const actions: string[] = [];
   if (lowest === 'מדדים כמותיים') actions.push('בחרי צוות מוקד אחד והגדירי סימן אחד שאפשר לספור או להשוות לפני ואחרי.');
   if (lowest === 'מערכת ואחריות') actions.push('קבעי עם מנהל/ת החלטה אחת ברורה: איזה משאב, זמן או גיבוי נדרש ומי אחראי עליו.');
   if (lowest === 'אופרטיביות ועצמאות') actions.push('הגדירי פעולה אחת שהמודרך יבצע לבד במפגש הבא, ואת הראיה שתראה שהעצמאות גדלה.');
@@ -326,7 +375,7 @@ export function recommendedActions(state: MatiState) {
 export function summarizeLongText(text: string) { const clean = text.replace(/\s+/g, ' ').trim(); if (clean.length <= 360) return ''; const sentences = clean.split(/(?<=[.!?])\s+/).filter(Boolean); const summary = (sentences.slice(0, 2).join(' ') || clean).slice(0, 240); return `${summary}${summary.length < clean.length ? '…' : ''}`; }
 
 export function rubricForNextYear(state: MatiState) {
-  const dims = [...scoreDimensions(state)].sort((a, b) => a.score - b.score); const mistakes: string[] = [];
+  const dims = [...rankDimensions(scoreDimensions(state)).byStrength].reverse(); const mistakes: string[] = [];
   if (state.formative.answers.q1.measuresDefined === 'no') mistakes.push('יעדים בלי מדדי הצלחה ברורים');
   if (state.formative.answers.q3.meetingRate === 'under70') mistakes.push('פער גבוה בין לוח הזמנים לתדירות המפגשים בפועל');
   if (state.formative.answers.q6.managerCommitment === 'low' || state.formative.answers.q6.managerCommitment === 'resistance') mistakes.push('תלות בתהליך בלי מחויבות מנהלים מספקת');

@@ -8,6 +8,7 @@ import {
   MatiState,
   planSaved,
   recommendedActions,
+  rankDimensions,
   scoreDimensions,
   selfEffectivenessAverage,
   resolveStage,
@@ -90,8 +91,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const calendar = now ? calendarContext(now, stageFromDate(now)) : null;
   const action = nextAction(state, activeStage);
   const dims = useMemo(() => scoreDimensions(state), [state]);
-  const lowest = [...dims].sort((a, b) => a.score - b.score)[0];
-  const strongest = [...dims].sort((a, b) => b.score - a.score)[0];
+  const { strongest, weakest: lowest } = rankDimensions(dims);
   const recommendations = recommendedActions(state);
   const implementation = implementationStatus(state);
   const effectiveness = selfEffectivenessAverage(state);

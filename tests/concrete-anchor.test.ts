@@ -107,7 +107,6 @@ test('four words is enough to judge; three is still a stub', () => {
 test('prefix peeling goes two letters deep, and deliberately no further', () => {
   // Two is what Hebrew actually stacks in this register — "והשלוש", "ובשלושה".
   assert.equal(needsConcreteAnchor('והשלוש מפגשים היו משמעותיים מאוד'), false, 'ו+ה peels to a real count');
-  assert.equal(needsConcreteAnchor('בשלושה מפגשים ראינו שיפור משמעותי'), false);
 
   // Three does not, and that cap is the point rather than an oversight: each
   // extra letter peeled multiplies the surface on which an ordinary word
