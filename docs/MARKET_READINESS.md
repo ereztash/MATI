@@ -321,8 +321,52 @@ The same harness **failed on every run**, which is why the above went unnoticed.
 
 `scripts/check-readiness.mjs` swallowed missing files and returned `''`. Since it only fails when the DoD claims more than the code delivers, a renamed file would turn every probe that reads it to "not met" and still pass — a silent downgrade. It now exits non-zero and names the file. It was also the one contract check absent from CI; it is in the workflow now.
 
-### What is deliberately still open
+### What was still open at the end of that pass
 
-24 survivors remain in `lib/stages.ts` and 24 in `lib/context-engine.ts`, concentrated in the heuristic scoring — `scoreDimensions`' per-dimension norms, `analyzeInteraction`'s pace and tone thresholds, the five "lowest dimension" dispatch lines, and the context engine's contradiction rules and intensity/density decision. Pinning those means first deciding what the scoring model is *supposed* to do at its boundaries, which is a professional-content decision rather than a testing one, and a larger piece of work than this pass. They are listed here rather than left implicit.
+24 survivors remained in `lib/stages.ts` and 24 in `lib/context-engine.ts`, concentrated in the heuristic scoring. They are closed in the next section.
 
 **Suite after this pass: 122 unit tests, 25 e2e tests, all four checks (now four in CI), readiness unchanged at 6/8.**
+
+## Closing the heuristic scoring, 2026-08-20
+
+The 88 survivors left by the sweep above were nearly all in the parts of the app that decide what to *say* to a מדריכה rather than what to store: the five-dimension mirror, the coaching mode, the independence verdict, the SMART reading. Closing them meant writing the model down.
+
+These are characterisation tests, and the distinction matters. The cut-offs they now pin — 60% implementation, a 5.5 self-rating, 170 and 55 characters, two negative answers, 0.28 and 0.72 of a stage window, 90 days — are the model **as it currently stands**, not values anyone has signed off as professionally correct. What changed is that they are now stated somewhere a person can read and disagree with, and moving one is a deliberate edit rather than a discovery in production.
+
+### What the scoring model turned out to do
+
+Writing the tests surfaced a property worth a decision rather than a test. In `scoreDimensions`, **an honest low answer scores worse than no answer at all**: reporting 0% implementation gives 4 stars where leaving the field blank gives 5, because a blank is skipped by `averagePresent` while a zero is averaged in. The same holds for "לא ביקשתי משוב מהצוות" and for meeting none of the planned manager sessions. A mirror that rewards silence over an honest low number is not obviously what was intended; the behaviour is now pinned and named in `tests/stages.test.ts` rather than sitting unremarked in an average.
+
+### What was closed
+
+- **`scoreDimensions`** — each dimension moves on its own evidence and on nothing else; the graded scales are graded rather than merely present; "no adaptations at all" is an answer that scores low and cites nothing; the four ratio inputs each move their dimension alone.
+- **`recommendedActions`** — all five "weakest dimension" branches, reached by leaving exactly one dimension unfilled so it is uniquely lowest.
+- **`analyzeInteraction`** — pace at exactly 170 and 55 characters, narrative at exactly 180, style only named when the evidence is one-sided, tone at two difficult answers and overload at three.
+- **`findContradictions`** — all four rules, each over every combination its `||` branches allow and each near miss. Two of the four (managers who committed and did not fund; "works independently" beside "stops without me") had no test at all.
+- **`deriveCoachStrategy`** — the stage-position signals, the explanation's strong-before-medium ordering, that a phone alone does not narrow the session, that closing withdraws depth without overwriting a focused session, and the headline precedence.
+- **`independenceReading`** — the verdict edges at exactly 0.75 and 0.25, each verdict's own headline and note, and both independent routes into "looks productive".
+- **`evaluateSmartGoal`** — the three-content-word floor, two-letter words counting as content, both metrics required, and one-directional containment for prefixed Hebrew in both the domain-anchor and audience-overlap paths.
+- **`validateOrganizationalPack`** — percentages valid at 0 and 100, and a signal that is not an object (`null` especially) rejected rather than read as one.
+- **`buildPersonalGantt`** — the programme year turning over in July not June, a stamp on an incomplete plan producing no timeline, and a fixed window that closes exactly as the timeline opens still being shown.
+- **`migrateState` / `sameExceptNavigation`** — a v1 save recognised from either answer it might carry, and an unreadable payload never reported as unchanged.
+- **`hasConcreteAnchor`** — four words being enough to judge, and prefix peeling stopping at two letters on purpose.
+
+### The fourteen that remain, and why they are left
+
+**349 of 363 mutants killed.** The remaining 14 are equivalent mutants — no input distinguishes them — and each is left deliberately rather than unexamined:
+
+| Where | Why no input reaches it |
+| --- | --- |
+| `stages.ts` `rangeScore`, `averagePresent` | Differ only for a value outside the map, or for `NaN`; every caller passes a closed union or a clamped ratio, and `undefined`/`null` are filtered identically. |
+| `stages.ts` `summarizeLongText` | `summary` is sliced to 240 and only computed when the text exceeds 360, so the comparison is always true. |
+| `context-engine.ts` stage position | Differs only when the ratio is *exactly* 0.28 — one millisecond in a 92-day window. |
+| `context-engine.ts` `numeric` | Returns `0` instead of `null` for an empty string; its only caller tests `>= 80`. |
+| `smart-criteria.ts` audience overlap | With an empty audience, `sharesWord(goal, [])` is false either way. |
+| `organizational-pack.ts` `exactKeys` | The looser form can only pass when the keys are a strict sorted prefix of the expected ones, and the missing key is then caught by its own explicit check. |
+| `organizational-pack.ts` signal cap | Only 13 signal keys exist and duplicates are rejected, so a 30-signal pack cannot be built. |
+| `state-storage.ts` canonical sort | Object keys are unique, so the equal-keys case the mutants change never occurs. |
+| `concrete-anchor.ts` peel bound | The extra iteration slices past the end to `''`, which is in no set. |
+| `organizational-signals.ts` `contributors >= 2` | Unreachable past the `contributors < minCohort` guard, where the floor is 3. |
+| `organizational-signals.ts` authority | The line above returns first for every other action, so the mutated condition holds for anything that reaches it. |
+
+**Suite after this pass: 161 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**

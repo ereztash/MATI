@@ -5,7 +5,7 @@ import {
   GAP_ANSWER_MAX_AGE_DAYS, hasLargeGoalResultGap,
   implementationStatus, MatiState, planReady, planSaved, ratioPercent, recommendedActions, resolveStage, scoreDimensions,
   rubricForNextYear, selfEffectivenessAverage, smartGoalLooksValid, stage2SectionStarted, stageFromDate,
-  stageWindowLabel, summarizeLongText,
+  stageLockReason, stageWindowLabel, summarizeLongText,
 } from '../lib/stages';
 import { migrateState } from '../lib/state-storage';
 
@@ -244,9 +244,11 @@ test('summarizeLongText only summarises text long enough to need it', () => {
   assert.equal(summarizeLongText('קצר'), '');
   assert.equal(summarizeLongText('א'.repeat(360)), '');
   const long = 'משפט ראשון. משפט שני. ' + 'א'.repeat(400);
-  const summary = summarizeLongText(long);
-  assert.ok(summary.length > 0 && summary.length <= 241);
-  assert.ok(summary.startsWith('משפט ראשון.'));
+  // Asserted exactly, not by startsWith and a length range: the summary is the
+  // first TWO SENTENCES, and a truncation of the whole text to 240 characters
+  // also starts with 'משפט ראשון.' and also fits the range — so the loose
+  // version passed either way. Where the summary ENDS is the whole behaviour.
+  assert.equal(summarizeLongText(long), 'משפט ראשון. משפט שני.…');
 });
 
 test('analyzeInteraction stays unknown until there is enough to read', () => {
@@ -282,4 +284,245 @@ test('deleteStakes names what is actually at risk instead of a generic warning',
   // savedAt) must not be reported as something the deletion would lose.
   const unsavedPlan = state({ plan: fullPlan });
   assert.equal(deleteStakes(unsavedPlan), 'אין כרגע שום דבר שמור בדפדפן הזה — אפשר למחוק בלי לאבד עבודה.');
+});
+
+/* ------------------------------------------------------------------------- *
+ * The heuristic scoring model.
+ *
+ * Everything below was added after a mutation sweep found that `scoreDimensions`,
+ * `analyzeInteraction`, `recommendedActions`' dispatch and `hasLargeGoalResultGap`
+ * had no test that constrained them: the existing coverage asserted that scores
+ * sit between 1 and 5 (a range `toStars` clamps to [2,5] by construction, so it
+ * could not fail) and that at most three actions come back, and nothing about
+ * which number or which action.
+ *
+ * These are characterisation tests. The cut-offs they pin — 60% implementation,
+ * a 5.5 self-rating, 170 and 55 characters, two negative answers — are the
+ * model as it currently stands, not values anyone has signed off as
+ * professionally correct. That is the point: the model is now stated somewhere
+ * a person can read and argue with, and changing it means changing this file
+ * deliberately rather than discovering the change in production.
+ * ------------------------------------------------------------------------- */
+
+/** The inputs that carry each of the five dimensions, one entry per dimension. */
+const DIMENSION_INPUTS: Record<string, { plan: Record<string, unknown>; answers: Record<string, Record<string, unknown>> }> = {
+  'רפלקציה ולמידה': {
+    plan: { flexibility: 'נקודת גמישות' },
+    answers: { q5: { adaptations: '3-4' }, q8: { centralMistake: 'טעות', flexibilityReflection: 'רפלקציה' } },
+  },
+  'מדדים כמותיים': {
+    plan: { metric1: 'מדד א', metric2: 'מדד ב' },
+    answers: { q1: { implementationPercent: '100' }, q4: { targetStudents: '10', improvedStudents: '10' }, q9: { goals: 10 } },
+  },
+  'לוח זמנים ויישום': {
+    plan: { timeframe: 'ספטמבר–ינואר' },
+    answers: { q3: { meetingRate: '90-100', depth: 'consistent' }, q5: { plannedHours: '10', actualHours: '10' } },
+  },
+  'מערכת ואחריות': {
+    plan: { managers: 'מנהלת בית הספר' },
+    answers: { q6: { teamFeedbackAsked: 'yes', managerPlanned: '4', managerActual: '4', resourcesAllocated: 'yes', culturePositiveSign: 'סימן' } },
+  },
+  'אופרטיביות ועצמאות': {
+    plan: { independence: 'ביצוע עצמאי' },
+    answers: { q2: { frequency: 'independent' }, q7: { independence: 'all', continuesWithoutDependency: 'yes' } },
+  },
+};
+
+const DIMENSION_NAMES = Object.keys(DIMENSION_INPUTS);
+
+/** A state with every dimension's inputs filled except the ones named. */
+function filledExcept(...skip: string[]): MatiState {
+  const plan: Record<string, unknown> = {};
+  const answers: Record<string, Record<string, unknown>> = {};
+  for (const name of DIMENSION_NAMES) {
+    if (skip.includes(name)) continue;
+    Object.assign(plan, DIMENSION_INPUTS[name].plan);
+    for (const [id, values] of Object.entries(DIMENSION_INPUTS[name].answers)) {
+      answers[id] = { ...(answers[id] ?? {}), ...values };
+    }
+  }
+  return state({ plan, formative: { answers } });
+}
+
+const scoreOf = (st: MatiState, name: string) => scoreDimensions(st).find((d) => d.name === name)!.score;
+
+test('each dimension is moved by its own evidence and by nothing else', () => {
+  // The isolation is the actual claim of a five-dimension mirror: if filling in
+  // the manager questions also lifted "מדדים כמותיים", the picture she is shown
+  // would be flattery rather than a reading. Asserted per dimension rather than
+  // as one golden snapshot, so a failure names which dimension leaked.
+  for (const name of DIMENSION_NAMES) {
+    const onlyThisOne = filledExcept(...DIMENSION_NAMES.filter((other) => other !== name));
+    assert.equal(scoreOf(onlyThisOne, name), 5, `${name} should be full when its own evidence is complete`);
+    for (const other of DIMENSION_NAMES) {
+      if (other === name) continue;
+      assert.equal(scoreOf(onlyThisOne, other), 2, `${name}'s evidence must not lift ${other}`);
+    }
+  }
+});
+
+test('a graded answer is graded, not just present', () => {
+  // rangeScore maps each option to its own weight. Treating the whole scale as
+  // "answered / not answered" is the failure mode worth catching: it would let
+  // "המודרך לא עצמאי כלל" read the same as "עצמאי לחלוטין".
+  const independenceAt = (value: string) =>
+    scoreOf(state({ formative: { answers: { q7: { independence: value } } } }), 'אופרטיביות ועצמאות');
+
+  assert.equal(independenceAt('none'), 2);
+  assert.equal(independenceAt('partial'), 3);
+  assert.equal(independenceAt('all'), 4);
+  const ladder = ['none', 'partial', 'most', 'all'].map(independenceAt);
+  assert.deepEqual([...ladder].sort((a, b) => a - b), ladder, 'the scale must never score a weaker answer higher');
+});
+
+test('"no adaptations at all" is an answer, and it does not count as evidence of adapting', () => {
+  // q5.adaptations === '0' is answered — but answering "none" is the opposite of
+  // the thing this dimension measures, so it scores near the floor and produces
+  // no evidence line. Swapping that comparison silently turns "I changed nothing"
+  // into a citation for reflectiveness.
+  const at = (value: string) => scoreDimensions(state({ formative: { answers: { q5: { adaptations: value } } } }))[0];
+
+  assert.equal(at('0').score, 2);
+  assert.deepEqual(at('0').evidence, [], 'answering "none" is not evidence of adapting');
+  assert.equal(at('1-2').score, 3);
+  assert.deepEqual(at('1-2').evidence, ['בוצעו התאמות בעקבות צורך או משוב']);
+});
+
+test('the advice she is given belongs to her weakest dimension', () => {
+  // recommendedActions dispatches on which dimension scored lowest. Leaving
+  // exactly one dimension unfilled makes it uniquely lowest (2 against 5), so
+  // each of the five branches is reachable on its own.
+  const ADVICE_FOR: Record<string, string> = {
+    'רפלקציה ולמידה': 'בחרי התאמה אחת שעשית בעקבות משוב ותעדי מה השתנה בעקבותיה.',
+    'מדדים כמותיים': 'בחרי צוות מוקד אחד והגדירי סימן אחד שאפשר לספור או להשוות לפני ואחרי.',
+    'לוח זמנים ויישום': 'השווי בין מה שתוכנן למה שהתקיים בפועל ובחרי חסם אחד שניתן לשנות כבר במחזור הבא.',
+    'מערכת ואחריות': 'קבעי עם מנהל/ת החלטה אחת ברורה: איזה משאב, זמן או גיבוי נדרש ומי אחראי עליו.',
+    'אופרטיביות ועצמאות': 'הגדירי פעולה אחת שהמודרך יבצע לבד במפגש הבא, ואת הראיה שתראה שהעצמאות גדלה.',
+  };
+
+  for (const weakest of DIMENSION_NAMES) {
+    const st = filledExcept(weakest);
+    assert.equal(scoreOf(st, weakest), 2, `${weakest} should be the only dimension left at the floor`);
+    const actions = recommendedActions(st);
+    assert.ok(actions.includes(ADVICE_FOR[weakest]), `a weakest "${weakest}" must earn its own action, got: ${actions[0]}`);
+    for (const other of DIMENSION_NAMES) {
+      if (other === weakest) continue;
+      assert.ok(!actions.includes(ADVICE_FOR[other]), `${other}'s action must not appear when ${weakest} is the weakest`);
+    }
+  }
+});
+
+test('hasLargeGoalResultGap has an exact cut-off on both of its numbers', () => {
+  // Either number can raise the flag on its own, and both are the model's own
+  // arbitrary lines rather than measured ones — which is exactly why they should
+  // be written down. 60% implementation, or a self-rating below 5.5.
+  const atImplementation = (percent: string) => hasLargeGoalResultGap(
+    state({ formative: { answers: { q1: { goalAchievement: 'partial', implementationPercent: percent } } } }));
+  assert.equal(atImplementation('59'), true);
+  assert.equal(atImplementation('60'), false, '60 is not "below 60"');
+
+  const atSelfRating = (value: number) => hasLargeGoalResultGap(
+    state({ formative: { answers: { q1: { goalAchievement: 'partial' }, q9: { goals: value, implementation: value } } } }));
+  assert.equal(atSelfRating(5), true);
+  assert.equal(atSelfRating(5.5), false, '5.5 is not "below 5.5"');
+});
+
+test('a whitespace-only answer does not count as a started section', () => {
+  // hasValue short-circuits on '' before it ever measures a length, so the empty
+  // state cannot reach the length check at all — which is why the existing
+  // coverage left it unconstrained. A typed space is the case that reaches it,
+  // and it must not unlock Stage 3 on its own.
+  assert.equal(stage2SectionStarted(state({ formative: { answers: { q5: { other: '   ' } } } }).formative, 'q5'), false);
+  assert.equal(stage2SectionStarted(state({ formative: { answers: { q5: { other: 'תוכן' } } } }).formative, 'q5'), true);
+  assert.equal(formativeStarted(state({ formative: { answers: { q8: { next1: '  ' } } } }).formative), false);
+});
+
+test('each locked stage is told why it is locked, and not the other one', () => {
+  assert.match(stageLockReason(2), /^כדי לעבור להערכה המעצבת/);
+  assert.match(stageLockReason(3), /^כדי לעבור להערכה המסכמת/);
+  assert.notEqual(stageLockReason(2), stageLockReason(3));
+});
+
+/**
+ * `analyzeInteraction` reads every string in the state, `formative.route`
+ * ('short', five characters) included — the defect recorded in
+ * tests/context-engine.ts. The averages below are therefore over the supplied
+ * texts plus that one, which is what makes an exact boundary reachable at all;
+ * if that defect is fixed, these counts change and this comment is the note
+ * saying so.
+ */
+const PLAIN_FIELDS = ['flexibility', 'managers', 'independence', 'nextSmallStep', 'identityFit', 'confidenceNeed', 'audience'];
+const profileOf = (texts: string[]) =>
+  analyzeInteraction(state({ plan: Object.fromEntries(texts.map((t, i) => [PLAIN_FIELDS[i], t])) }));
+const filler = (length: number) => 'ג'.repeat(length);
+
+test('pace switches at exactly 170 and 55 characters, not one either side', () => {
+  assert.equal(profileOf([filler(225), filler(225), filler(225)]).pace, 'balanced', 'an average of exactly 170 is not yet deep');
+  assert.equal(profileOf([filler(226), filler(226), filler(226)]).pace, 'deep');
+  assert.equal(profileOf([filler(80), filler(80)]).pace, 'balanced', 'an average of exactly 55 is not yet compact');
+  assert.equal(profileOf([filler(79), filler(79)]).pace, 'compact');
+});
+
+test('a long answer reads as narrative only past 180 characters', () => {
+  // Length is the second route into "narrative", beside the keyword list — so a
+  // long factual answer with no reflective language still counts as one. The
+  // boundary decides whether she is read as intuitive or mixed.
+  assert.equal(profileOf([filler(180), filler(180)]).style, 'mixed');
+  assert.equal(profileOf([filler(181), filler(181)]).style, 'intuitive');
+});
+
+test('a style is only named when the evidence is one-sided', () => {
+  // analytic requires numbers AND no narrative; intuitive the reverse. A single
+  // answer from the other side is enough to make it 'mixed' — the honest reading
+  // when she is doing both.
+  assert.equal(profileOf(['יעד 12 מפגשים', 'מדד 30 תלמידים']).style, 'analytic');
+  assert.equal(profileOf(['יעד 12 מפגשים', 'מדד 30 תלמידים', 'כי זה מה שקרה']).style, 'mixed');
+  assert.equal(profileOf(['כי זה מה שקרה', 'הרגשתי שזה נכון']).style, 'intuitive');
+  assert.equal(profileOf(['כי זה מה שקרה', 'הרגשתי שזה נכון', 'יעד 12 מפגשים']).style, 'mixed');
+});
+
+test('tone softens at two difficult answers and overload starts at three', () => {
+  assert.equal(profileOf(['קשה לי מאוד', 'טקסט רגיל לגמרי']).tone, 'direct');
+  assert.equal(profileOf(['קשה לי מאוד', 'מתסכל אותי']).tone, 'soft');
+  assert.equal(profileOf(['קשה לי מאוד', 'מתסכל אותי']).overload, false);
+  assert.equal(profileOf(['קשה לי מאוד', 'מתסכל אותי', 'אין זמן בכלל']).overload, true);
+  assert.equal(profileOf(['כן', 'טקסט רגיל לגמרי']).minimalism, false);
+  assert.equal(profileOf(['כן', 'לא']).minimalism, true);
+});
+
+test('a reported ratio moves its dimension on its own — and a low answer costs more than no answer', () => {
+  // These four inputs are the only ones that enter the score as a measured
+  // ratio rather than a presence flag, and each was unconstrained: the
+  // isolation test above fills every input to its maximum, where dropping one
+  // changes no star. Varying one at a time is what reaches them.
+  //
+  // It also documents a real property of the model, which is not obviously the
+  // intended one: reporting 0% implementation scores LOWER (4) than leaving the
+  // field blank (5), because a blank is skipped by averagePresent while a zero
+  // is averaged in. The same holds for "לא ביקשתי משוב מהצוות" and for meeting
+  // none of the planned manager sessions. A mirror that rewards silence over an
+  // honest low number is worth a decision; until that decision is taken, this
+  // is where the current behaviour is written down.
+  const quantitative = (implementationPercent: string) => scoreDimensions(
+    state({ plan: { metric1: 'מדד א', metric2: 'מדד ב' }, formative: { answers: { q1: { implementationPercent } } } }),
+  ).find((d) => d.name === 'מדדים כמותיים')!.score;
+  assert.equal(quantitative(''), 5, 'unanswered is skipped');
+  assert.equal(quantitative('0'), 4, 'answered zero is averaged in, and costs a star');
+  assert.equal(quantitative('100'), 5);
+
+  const timetable = (actualHours: string) => scoreDimensions(
+    state({ plan: { timeframe: 'ספטמבר–ינואר' }, formative: { answers: { q5: { plannedHours: '10', actualHours } } } }),
+  ).find((d) => d.name === 'לוח זמנים ויישום')!.score;
+  assert.equal(timetable(''), 5, 'no hours reported at all');
+  assert.equal(timetable('0'), 4, 'none of the planned field hours happened');
+  assert.equal(timetable('10'), 5);
+
+  const system = (q6: Record<string, string>) => scoreDimensions(
+    state({ plan: { managers: 'מנהלת בית הספר' }, formative: { answers: { q6 } } }),
+  ).find((d) => d.name === 'מערכת ואחריות')!.score;
+  assert.equal(system({}), 5, 'nothing asked about the system yet');
+  assert.equal(system({ teamFeedbackAsked: 'no' }), 4, '"I did not ask the team" is scored, not ignored');
+  assert.equal(system({ teamFeedbackAsked: 'yes' }), 5);
+  assert.equal(system({ managerPlanned: '4', managerActual: '0' }), 4, 'none of the planned manager meetings happened');
+  assert.equal(system({ managerPlanned: '4', managerActual: '4' }), 5);
 });

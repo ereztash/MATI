@@ -95,3 +95,23 @@ test('peeling a Hebrew prefix must not manufacture a count out of an ordinary wo
   assert.equal(needsConcreteAnchor('היו שני מפגשים והתהליך היה משמעותי'), false);
   assert.equal(needsConcreteAnchor('בשלושה מפגשים ראינו שיפור משמעותי'), false);
 });
+
+test('four words is enough to judge; three is still a stub', () => {
+  // MIN_WORDS_TO_JUDGE is the line between "too short to be a claim" and "a
+  // claim with no evidence". Both sides of it were unconstrained: every existing
+  // case sat comfortably above or below.
+  assert.equal(needsConcreteAnchor('היה תהליך משמעותי מאוד'), true, 'exactly four words is a claim');
+  assert.equal(needsConcreteAnchor('היה תהליך משמעותי'), false, 'three is not yet one');
+});
+
+test('prefix peeling goes two letters deep, and deliberately no further', () => {
+  // Two is what Hebrew actually stacks in this register — "והשלוש", "ובשלושה".
+  assert.equal(needsConcreteAnchor('והשלוש מפגשים היו משמעותיים מאוד'), false, 'ו+ה peels to a real count');
+  assert.equal(needsConcreteAnchor('בשלושה מפגשים ראינו שיפור משמעותי'), false);
+
+  // Three does not, and that cap is the point rather than an oversight: each
+  // extra letter peeled multiplies the surface on which an ordinary word
+  // collides with a number, which is the failure NOT_REACHABLE_BY_PEELING
+  // already exists to patch by hand. Deeper peeling would find a "count" here.
+  assert.equal(needsConcreteAnchor('ובהשלוש מפגשים היו משמעותיים מאוד'), true);
+});

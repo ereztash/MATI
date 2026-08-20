@@ -310,3 +310,55 @@ test('aggregation counts distinct contributors, contexts and periods', () => {
   assert.equal(rate.neutral, 3);
   assert.equal(rate.classification, null);
 });
+
+test('a percentage is valid at both ends of its range, and nowhere outside', () => {
+  // 0% implementation and 100% implementation are both real answers. The
+  // existing coverage rejected 140 and never checked that the permitted range
+  // includes its own endpoints, so both bounds could be tightened silently and
+  // an honest "nothing was implemented" would be dropped from the export.
+  const withRate = (value: unknown) => {
+    const pack = JSON.parse(JSON.stringify(validPack()));
+    (pack.signals as Record<string, unknown>[]).find((s) => s.key === 'implementation_rate')!.value = value;
+    return validateOrganizationalPack(pack);
+  };
+  assert.equal(withRate(0), true, '0% is a measurement, not a missing value');
+  assert.equal(withRate(100), true);
+  assert.equal(withRate(-1), false);
+  assert.equal(withRate(101), false);
+  assert.equal(withRate(Number.NaN), false);
+});
+
+test('a signal that is not an object is rejected rather than read as one', () => {
+  // The signals array is the part of a pack that comes from another device.
+  // `null` in particular is worth naming: it is what a half-written JSON file
+  // and a stripped field both produce, and `typeof null === 'object'`.
+  for (const junk of [null, undefined, 'goal_attainment', 42, true, ['goal_attainment']]) {
+    const pack = JSON.parse(JSON.stringify(validPack()));
+    (pack.signals as unknown[])[0] = junk;
+    assert.equal(validateOrganizationalPack(pack), false, `a signal of ${JSON.stringify(junk) ?? 'undefined'} must be rejected`);
+  }
+});
+
+test('aggregation counts a concern as adverse and a benign answer as not', () => {
+  // `adverse` is derived from signalConcern and is what the privacy-floor
+  // classifier counts. Reading it backwards makes a healthy cohort look
+  // systemic and a struggling one look fine, with no other visible symptom.
+  const packWith = (contributorId: string, value: string): OrganizationalPack => createOrganizationalPack({
+    contributorId, contextId: 'RGV-07', periodId: '2026-01',
+    signals: [{ key: 'goal_attainment', stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' } as OrganizationalSignal],
+  });
+
+  const allAdverse = summarizeOrganizationalPacks([
+    packWith('contributor-0001', 'partial'), packWith('contributor-0002', 'none'), packWith('contributor-0003', 'partial'),
+  ])[0];
+  assert.equal(allAdverse.concerns, 3);
+  assert.equal(allAdverse.classification?.adverseShare, 1);
+  assert.ok(allAdverse.classification?.reasons.includes('majority_adverse'));
+
+  const allFine = summarizeOrganizationalPacks([
+    packWith('contributor-0001', 'full'), packWith('contributor-0002', 'mostly'), packWith('contributor-0003', 'full'),
+  ])[0];
+  assert.equal(allFine.concerns, 0);
+  assert.equal(allFine.classification?.adverseShare, 0);
+  assert.ok(!allFine.classification?.reasons.includes('majority_adverse'));
+});

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPersonalGantt, timelinePercent, toDateOnly } from '../lib/plan-timeline';
 import { emptyState, MatiState } from '../lib/stages';
+import { migrateState } from '../lib/state-storage';
 
 const savedPlan = (overrides: Partial<MatiState['plan']> = {}, savedAt = '2026-08-10T09:00:00.000Z') => ({
   ...emptyState.plan,
@@ -171,4 +172,45 @@ test('timelinePercent is monotonic and clamped to 0–100', () => {
   const midPct = timelinePercent(mid, start, end);
   assert.ok(midPct > 0 && midPct < 100);
   assert.ok(timelinePercent(start, start, end) < midPct);
+});
+
+/* ------------------------------------------------------------------------- *
+ * Where the programme year begins, and which fixed windows still lie ahead.
+ * All four boundaries below were unconstrained until a mutation sweep found
+ * them; each one silently moves a whole year's timeline rather than failing.
+ * ------------------------------------------------------------------------- */
+
+const completePlan = { audience: 'מחנכות', smartGoal: 'מטרה', metric1: 'מדד א', metric2: 'מדד ב', timeframe: 'ספטמבר–ינואר' };
+const ganttSavedAt = (date: Date) => buildPersonalGantt(migrateState({ plan: { ...completePlan, savedAt: date.toISOString() } }));
+
+test('the programme year turns over in July, not in June', () => {
+  // A plan saved in June belongs to the year that is ending; one saved in July
+  // opens the next. Shifting this by a month re-dates every mark on the chart.
+  assert.equal(ganttSavedAt(new Date(2026, 5, 15, 10))!.end.getFullYear(), 2026, 'June belongs to the closing year');
+  assert.equal(ganttSavedAt(new Date(2026, 6, 15, 10))!.end.getFullYear(), 2027, 'July opens the next one');
+});
+
+test('a stamp on an incomplete plan does not produce a timeline', () => {
+  // Both halves of the guard matter: `savedAt` can be present on a plan that no
+  // longer passes planReady — she saved, then cleared a required field — and a
+  // timeline drawn from that would be anchored to a plan that does not exist.
+  assert.equal(buildPersonalGantt(migrateState({ plan: { audience: 'מחנכות', savedAt: '2026-07-15T10:00:00.000Z' } })), null);
+  assert.equal(buildPersonalGantt(migrateState({ plan: completePlan })), null, 'and an unsaved complete plan has no timeline either');
+});
+
+test('a fixed window that closes exactly as the timeline opens is still shown', () => {
+  // The rule is "omit a window that closed BEFORE the timeline begins". Saving
+  // at the final millisecond of a window is the one moment where inclusive and
+  // exclusive differ, and it is the difference between showing her the window
+  // she is standing in and hiding it.
+  const kindsAt = (date: Date) => ganttSavedAt(date)!.milestones.map((m) => m.kind);
+  const lastMomentOfFormative = new Date(2027, 1, 28, 23, 59, 59, 999);
+  assert.ok(kindsAt(lastMomentOfFormative).includes('formativeWindow'));
+  assert.ok(!kindsAt(new Date(lastMomentOfFormative.getTime() + 1)).includes('formativeWindow'),
+    'one millisecond later it has closed and is omitted');
+
+  const lastMomentOfSummative = new Date(2027, 5, 30, 23, 59, 59, 999);
+  assert.ok(kindsAt(lastMomentOfSummative).includes('summativeWindow'));
+  assert.deepEqual(kindsAt(lastMomentOfSummative), ['summativeWindow'],
+    'and by then the formative window of that year is long closed');
 });

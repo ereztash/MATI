@@ -116,3 +116,48 @@ test('met mirrors status so existing callers stay correct', () => {
   const evaluation = evaluateSmartGoal(basePlan({ smartGoal: 'לשפר את ההוראה' }));
   for (const c of evaluation.criteria) assert.equal(c.met, c.status === 'met');
 });
+
+/* ------------------------------------------------------------------------- *
+ * The word matching underneath the four criteria.
+ *
+ * Hebrew has no word boundaries a regex can use and prefixes attach directly to
+ * the word, so every rule here is a containment test with a length floor. A
+ * mutation sweep found each of those floors and each direction of containment
+ * unconstrained — this is the same class of miss that the concrete-anchor nudge
+ * was already caught on once.
+ * ------------------------------------------------------------------------- */
+
+const statusesFor = (overrides: Record<string, string>) =>
+  Object.fromEntries(evaluateSmartGoal(basePlan(overrides)).criteria.map((c) => [c.letter, c.status]));
+
+test('"specific" counts meaningful words, down to two letters, and needs exactly three', () => {
+  // The floor is three content words; two is a gesture. Short words count —
+  // dropping them would quietly raise the bar for anyone writing tersely.
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה מותאמת' }).specific, 'met', 'three is enough');
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה' }).specific, 'missing', 'two is not');
+  assert.equal(statusesFor({ smartGoal: 'לשפר אב גד' }).specific, 'met', 'two-letter words are content, not noise');
+});
+
+test('"measurable" needs both success measures, not either one', () => {
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה מותאמת', metric1: 'תצפיות', metric2: 'משוב' }).measurable, 'met');
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה מותאמת', metric1: 'תצפיות' }).measurable, 'pending');
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה מותאמת', metric2: 'משוב' }).measurable, 'pending');
+});
+
+test('"relevant" matches a domain word inside a longer one, in either direction', () => {
+  // Hebrew attaches prefixes, so the goal says "לתלמידים" where the anchor list
+  // says "תלמיד": the goal word contains the anchor, never the reverse.
+  // Requiring both directions would fail every prefixed word in the language.
+  assert.equal(statusesFor({ smartGoal: 'לשפר הוראה לתלמידים', audience: 'טירים כלמנס' }).relevant, 'met');
+  assert.equal(statusesFor({ smartGoal: 'לשפר שיתוף בגנים', audience: 'טירים כלמנס' }).relevant, 'missing',
+    'no domain word and an audience it shares nothing with');
+});
+
+test('"relevant" also accepts an overlap with her own audience field', () => {
+  // Second route in, with the same one-directional containment and a
+  // three-letter floor: "בגנים" in the goal against "גני" in the audience. A
+  // floor one letter higher, or a match requiring both directions, drops it.
+  assert.equal(statusesFor({ smartGoal: 'לשפר שיתוף בגנים', audience: 'צוותי גני' }).relevant, 'met');
+  // An empty audience is a gap in a different field, not evidence of irrelevance.
+  assert.equal(statusesFor({ smartGoal: 'לשפר שיתוף בגנים' }).relevant, 'met');
+});

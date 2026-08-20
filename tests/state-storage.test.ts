@@ -115,3 +115,22 @@ test('an empty payload is recognised however it was serialized', () => {
   assert.equal(isEmptyPayload(JSON.stringify({ ...emptyState, manualStage: 2 })), true);
   assert.equal(isEmptyPayload(JSON.stringify({ ...emptyState, plan: { ...emptyState.plan, audience: 'תוכן' } })), false);
 });
+
+test('a v1 save is recognised from either of the two answers it could carry', () => {
+  // The v1 shape stored q1 and q2 as bare strings. A migration that required
+  // BOTH to be present would silently treat a state that only ever answered one
+  // of them as v2 — dropping her text into a shape that has no room for it.
+  const fromQ1Only = migrateState({ formative: { answers: { q1: 'טקסט ישן על יעדים' } } });
+  assert.equal(fromQ1Only.formative.answers.q1.evidence, 'טקסט ישן על יעדים');
+
+  const fromQ2Only = migrateState({ formative: { answers: { q2: 'טקסט ישן על התאמות' } } });
+  assert.equal(fromQ2Only.formative.answers.q2.evidence, 'טקסט ישן על התאמות');
+});
+
+test('an unreadable payload is never reported as unchanged', () => {
+  // sameExceptNavigation answers "may I overwrite this?". Its catch returning
+  // true instead of false would turn every unparseable stored value into a
+  // licence to overwrite — the exact case the blocked-store handling exists for.
+  assert.equal(sameExceptNavigation('{ not json', '{"plan":{}}'), false);
+  assert.equal(sameExceptNavigation('{"plan":{}}', 'לא JSON בכלל'), false);
+});

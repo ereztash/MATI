@@ -71,3 +71,62 @@ test('a partially answered section still yields a reading from what is there', (
   assert.equal(reading.signals.length, 1);
   assert.equal(reading.verdict, 'mixed');
 });
+
+/* ------------------------------------------------------------------------- *
+ * The verdict arithmetic and the three readings it selects.
+ *
+ * The tests above drive realistic whole answers; a mutation sweep found that
+ * none of them constrained where one verdict ends and the next begins, nor
+ * which of the three headlines and notes belongs to which verdict. This is the
+ * screen that tells a מדריכה whether a year of work left anything behind, so
+ * the wrong reading attached to the right numbers is the failure that matters.
+ * ------------------------------------------------------------------------- */
+
+const readingOf = (answers: Record<string, unknown>) => independenceReading(migrateState({ formative: { answers } }));
+
+test('the verdict boundaries include their own edge', () => {
+  // weak 0, partial 0.5, strong 1 — so two answered signals can land exactly on
+  // 0.75 and exactly on 0.25, which is the only way to reach these two edges.
+  assert.equal(readingOf({ q7: { independence: 'all', continuesWithoutDependency: 'partial' } }).verdict, 'growing',
+    'an average of exactly 0.75 is already growing');
+  assert.equal(readingOf({ q7: { independence: 'none', continuesWithoutDependency: 'partial' } }).verdict, 'dependent',
+    'an average of exactly 0.25 is already dependent');
+  assert.equal(readingOf({ q7: { independence: 'partial' } }).verdict, 'mixed');
+});
+
+test('each verdict carries its own headline and its own note', () => {
+  const CASES: Array<[string, Record<string, unknown>, string, string]> = [
+    ['growing', { q7: { independence: 'all', continuesWithoutDependency: 'yes' } },
+      'ההדרכה מייצרת עצמאות', 'זה הסימן החזק ביותר'],
+    ['dependent', { q7: { independence: 'none', continuesWithoutDependency: 'no' } },
+      'היישום עדיין תלוי בך', 'לפני שמוסיפים פעילות'],
+    ['mixed', { q7: { independence: 'partial' } },
+      'עצמאות חלקית — לא הכול עבר לשטח', 'חלק מהיישום כבר עומד בפני עצמו'],
+  ];
+  for (const [verdict, answers, headline, notePrefix] of CASES) {
+    const reading = readingOf(answers);
+    assert.equal(reading.verdict, verdict);
+    assert.equal(reading.headline, headline, `${verdict} must carry its own headline`);
+    assert.ok(reading.note.startsWith(notePrefix), `${verdict} must carry its own note, got: ${reading.note.slice(0, 40)}`);
+  }
+});
+
+test('"looks productive" has an exact cut-off, and either route into it is enough', () => {
+  // stopAndCheck is the warning that the numbers look fine while nothing was
+  // handed over. It needs the work to LOOK productive, by either of two
+  // independent readings — a reported implementation percentage at or above 70,
+  // or a goal answer of "mostly"/"full" — and each of those was unconstrained.
+  const stopFor = (answers: Record<string, unknown>) => readingOf({ q7: { independence: 'none' }, ...answers }).stopAndCheck;
+
+  assert.equal(stopFor({ q1: { implementationPercent: '70' } }), true, '70 already counts as productive');
+  assert.equal(stopFor({ q1: { implementationPercent: '69' } }), false);
+  assert.equal(stopFor({ q1: { implementationPercent: '30' } }), false,
+    'a reported LOW percentage must not count merely because it was reported');
+
+  assert.equal(stopFor({ q1: { goalAchievement: 'mostly' } }), true, 'goals alone are enough');
+  assert.equal(stopFor({ q1: { goalAchievement: 'full' } }), true);
+  assert.equal(stopFor({ q1: { goalAchievement: 'partial' } }), false);
+
+  // And growing independence is never a stop-and-check, however good the rest looks.
+  assert.equal(readingOf({ q7: { independence: 'all', continuesWithoutDependency: 'yes' }, q1: { implementationPercent: '90' } }).stopAndCheck, false);
+});
