@@ -1,18 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
+import { FormativeAnswers, MatiState, resolveStage, stage2SectionStarted, stageFromDate, stageNames, Stage } from '../lib/stages';
 import { readStoredState } from '../lib/state-storage';
 
 const shortIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q5', 'q8', 'q9'];
 const fullIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
 const summativeGroupSizes = [2, 1, 1] as const;
-const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 
 type WorkItem = { elements: HTMLElement[] };
 
 function currentStage(state: MatiState): Stage {
-  return (state.manualStage ?? stageFromDate() ?? 1) as Stage;
+  // Same `?? 1` fallback the home hero had, in a third file: during a gap this
+  // labelled the session "תכנון · חלק N" while the screen above it said the
+  // stage was unknown. resolveStage decides for every surface now.
+  return (resolveStage(state).stage ?? 1) as Stage;
 }
 
 function firstUsefulIndex(state: MatiState, stage: Stage, count: number) {

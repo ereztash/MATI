@@ -23,23 +23,53 @@ const EVALUATIVE_MARKERS = [
 ];
 
 /**
- * Anything that ties a claim to something checkable: a count, a time, a named
- * setting, a reported utterance, or an explicit example.
+ * Settings — where something happened. Deliberately NOT anchors, and listed
+ * here so the decision is explicit rather than an absence someone re-fills:
+ * "היה תהליך מצוין בכיתה" or "הייתה הדרכה משמעותית" names a room, not a
+ * checkable fact, so treating it as an anchor silences the R8 nudge on exactly
+ * the ungrounded-praise pattern it exists to catch (Q7). They are near-universal
+ * in this domain, so as vetoes they would mute most of what R8 is for. Nothing
+ * reads this list; it exists to be read by a person.
+ *
+ * שיעור and תצפית belong to the same class and were left in the anchor list by
+ * mistake when the rest were removed — so "היה תהליך מצוין בכיתה" nudged while
+ * the identical "…בשיעור" stayed silent. Verified against the real function
+ * before and after; both now behave the same way.
+ *
+ * Exported so the test can assert the rule directly instead of trusting that
+ * nobody re-adds one of these to ANCHOR_MARKERS.
+ */
+export const SETTING_MARKERS = ['כיתה', 'גן', 'מפגש', 'פגישה', 'ישיבה', 'הדרכה', 'שיעור', 'תצפית'];
+
+/**
+ * Anything that ties a claim to something checkable: a reported utterance or
+ * action, an explicit example, or a frequency.
  */
 const ANCHOR_MARKERS = [
   'למשל', 'לדוגמה', 'לדוגמא', 'כאשר', 'אחרי ש', 'לפני ש', 'בעקבות',
-  'שיעור', 'תצפית',
-  // Deliberately NOT here: כיתה / גן / מפגש / פגישה / ישיבה / הדרכה. A battery
-  // of realistic reflective sentences (tests/concrete-anchor.test.ts) showed
-  // these are near-universal in this domain — "היה תהליך מצוין בכיתה" or
-  // "הייתה הדרכה משמעותית" names a *setting*, not a checkable fact, and
-  // would have silenced the R8 nudge on exactly the ungrounded-praise pattern
-  // it exists to catch (Q7). A real event verb, a number, a quote, or an
-  // explicit connector below still anchors a claim; the setting alone does not.
   'אמרה', 'אמר', 'ביקשה', 'ביקש', 'סיפרה', 'סיפר', 'שאלה', 'הראתה', 'הראה',
   'בחרה', 'בחר', 'יזמה', 'יזם', 'תכננה', 'תכנן', 'הפעילה', 'הפעיל',
+  // Reporting verbs: naming who said what about the change is as checkable as
+  // a count. Their absence is why "המורות דיווחו על שיפור" read as unanchored.
+  'דיווח', 'ציינה', 'ציין', 'שיתפה', 'שיתף', 'הציגה', 'הציג',
   'פעמים', 'מתוך', 'לעומת', 'בשבוע', 'בחודש', 'ביום',
 ];
+
+/**
+ * Hebrew spells its small numbers, and this is a field people write by hand —
+ * "שלוש תצפיות" is exactly as concrete as "3 תצפיות", but the digit test in
+ * hasConcreteAnchor cannot see it. Ordinals are here for the same reason: "המפגש
+ * הרביעי" identifies one particular meeting.
+ */
+const SPELLED_QUANTITIES = new Set([
+  'אחת', 'שתיים', 'שתי', 'שניים', 'שלוש', 'שלושה', 'ארבע', 'ארבעה', 'חמש', 'חמישה',
+  'שש', 'שישה', 'שבע', 'שבעה', 'שמונה', 'תשע', 'תשעה', 'עשר', 'עשרה',
+  'ראשון', 'ראשונה', 'שני', 'שנייה', 'שניה', 'שלישי', 'שלישית', 'רביעי', 'רביעית',
+  'חמישי', 'חמישית', 'כולן', 'כולם', 'רובן', 'רובם',
+]);
+
+/** Single-letter particles Hebrew glues onto the front of a word: ו/ה/ב/ל/ש/מ/כ. */
+const HEBREW_PREFIXES = 'והבלשמכ';
 
 const HEBREW_MONTHS = ['ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני'];
 
@@ -52,12 +82,31 @@ function words(text: string) {
   return text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
 }
 
+/**
+ * Whole-word lookup, which the substring test the rest of this file uses cannot
+ * do: `'שש'.includes` also matches inside "חוששת", turning a worry into a count.
+ * JS word boundaries are defined over [A-Za-z0-9_], so `\b` is useless here —
+ * hence tokenizing, then peeling up to two of Hebrew's glued-on single-letter
+ * particles so "בשלושה" and "והשלוש" still read as the number they carry.
+ */
+function hasSpelledQuantity(text: string): boolean {
+  const tokens = text.split(/[^֐-׿]+/).filter(Boolean);
+  return tokens.some((token) => {
+    for (let cut = 0; cut <= 2 && cut < token.length; cut += 1) {
+      if (cut > 0 && !HEBREW_PREFIXES.includes(token[cut - 1])) break;
+      if (SPELLED_QUANTITIES.has(token.slice(cut))) return true;
+    }
+    return false;
+  });
+}
+
 export function hasConcreteAnchor(text: string): boolean {
   // A digit is the strongest anchor there is, and the cheapest to check.
   if (/\d/.test(text)) return true;
   // Reported speech in quotes is a concrete event even without a keyword.
   if (/["״"'׳].{2,}["״"'׳]/.test(text)) return true;
   if (HEBREW_MONTHS.some((m) => text.includes(m))) return true;
+  if (hasSpelledQuantity(text)) return true;
   return ANCHOR_MARKERS.some((m) => text.includes(m));
 }
 

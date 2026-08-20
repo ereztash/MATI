@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { LEGACY_KEY, nav, readStored, savedPlan, seed, STORAGE_KEY } from './fixtures';
+import { atDate, IN_CALENDAR_GAP, IN_STAGE_1, IN_STAGE_2, LEGACY_KEY, nav, readStored, savedPlan, seed, STORAGE_KEY } from './fixtures';
+
+// Pin the calendar for every test here. Most of these specs reach for Stage 1
+// fields, the Gantt or the stage strip, none of which exist in Dec–Feb, May–Jun
+// or the four gap months — so without this the suite silently depends on which
+// month CI runs in and turns red on 1 October. Tests about other months call
+// atDate again to override.
+test.beforeEach(async ({ page }) => { await atDate(page, IN_STAGE_1); });
 
 test('a v1 save is readable by every surface, not just the form page', async ({ page }) => {
   // Regression: the shells used to read only the v2 key with a shallow merge, so a
@@ -112,12 +119,35 @@ test('saving a plan opens stage 2 and records a checkpoint', async ({ page }) =>
 test('stage 2 stays locked until a plan is actually saved', async ({ page }) => {
   await page.goto('/');
   await nav(page, 'עבודה');
-  // The locked stage button carries aria-disabled but is still meant to be
-  // clicked, so it can explain what is missing. force is needed to click past
-  // Playwright's actionability check — see the accessibility note in the review.
+  // force is right here and not a smell: a locked stage carries aria-disabled
+  // rather than the disabled attribute precisely so it stays clickable and can
+  // say what is missing. Playwright's actionability check refuses aria-disabled
+  // elements; a real mouse is not so principled. Whether the button is
+  // physically reachable at all is a separate question, tested below.
   await page.locator('.stageStrip button').nth(1).click({ force: true });
   await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
   await expect(page.locator('.view-work .assessmentSection')).toHaveCount(0);
+});
+
+test('the work-session bar does not cover the stage strip', async ({ page }) => {
+  // Regression, and the reason the test above is allowed to use force. The
+  // sticky .workSessionBar is rendered before the header in the DOM, so the
+  // header scrolled underneath it: measured on desktop and on a Pixel 7,
+  // elementFromPoint at the centre of all three stage buttons returned the bar
+  // (or its children), i.e. stage navigation was entirely unclickable for a
+  // real user. Every directed test clicked with force, so none of them saw it.
+  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+  await expect(page.locator('.workSessionBar')).toBeVisible();
+
+  const blocked = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.stageStrip button')).flatMap((button, index) => {
+      const box = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return button.contains(hit) ? [] : [`stage ${index + 1} blocked by ${hit?.className || hit?.tagName}`];
+    }));
+  expect(blocked).toEqual([]);
 });
 
 test('adjusting a personal-Gantt milestone never clears savedAt, and reset returns to the suggested date', async ({ page }) => {
@@ -215,18 +245,50 @@ test('the home screen asks which stage you are in during a calendar gap, instead
   // in this exact situation; the home view — the first screen she sees —
   // silently did the opposite. Fixed by asking instead, same copy and
   // pattern as the existing gapShell screen.
-  await page.clock.install({ time: new Date('2026-10-01T10:00:00') });
+  await atDate(page, IN_CALENDAR_GAP);
   await page.goto('/');
   await expect(page.locator('h1')).toHaveText('באיזה שלב בלוח השנה את נמצאת?');
   await expect(page.locator('.gapOptions button')).toHaveCount(3);
 
-  await page.locator('.gapOptions button', { hasText: 'הערכה מעצבת' }).click();
-  await expect(page.locator('h1')).toContainText('הערכה מעצבת');
-  await expect.poll(async () => (await readStored(page)).manualStage).toBe(2);
+  // This test used to click straight through to stage 2 on an empty state and
+  // assert it was accepted — codifying the bug it was written next to. The
+  // picker wrote manualStage with no canOpenStage check, so it could put a
+  // first-time user on the summative screen over an empty plan while the stage
+  // strip rendered that same stage as aria-current AND aria-disabled at once.
+  await page.locator('.gapOptions button', { hasText: 'הערכה מעצבת' }).click({ force: true });
+  await expect(page.locator('.gapNotice')).toContainText('צריך קודם תוכנית עבודה שמורה');
+  await expect(page.locator('h1')).toHaveText('באיזה שלב בלוח השנה את נמצאת?');
+  expect(await readStored(page)).not.toHaveProperty('gapStage');
+
+  // Stage 1 is always open, so that answer is taken — and recorded as a gap
+  // answer rather than as manualStage, which SessionStageReset wipes on load.
+  await page.locator('.gapOptions button', { hasText: 'תכנון' }).click();
+  await expect(page.locator('h1')).toContainText('את בשלב תכנון');
+  await expect.poll(async () => (await readStored(page)).gapStage?.stage).toBe(1);
+
+  // The answer has to outlive a reload, or the question is re-asked on every
+  // single visit for the four months a year the calendar has no answer.
+  await page.reload();
+  await expect(page.locator('h1')).toContainText('את בשלב תכנון');
+});
+
+test('a stage chosen during a gap stops applying once a real window opens', async ({ page }) => {
+  // The mirror of the test above. Storing the gap answer as `manualStage` made
+  // it both too short-lived (wiped on reload) and too long-lived: nothing
+  // expired it, so a stage picked in November was still asserted in December —
+  // the confident wrong assertion the gap screen exists to prevent.
+  await atDate(page, IN_CALENDAR_GAP);
+  await page.goto('/');
+  await page.locator('.gapOptions button', { hasText: 'תכנון' }).click();
+  await expect(page.locator('h1')).toContainText('את בשלב תכנון');
+
+  await atDate(page, IN_STAGE_2);
+  await page.reload();
+  await expect(page.locator('h1')).toContainText('את בשלב הערכה מעצבת');
 });
 
 test('a real month is never shown the gap picker', async ({ page }) => {
-  await page.clock.install({ time: new Date('2026-12-15T10:00:00') });
+  await atDate(page, IN_STAGE_2);
   await page.goto('/');
   await expect(page.locator('.gapOptions button')).toHaveCount(0);
   await expect(page.locator('h1')).toContainText('הערכה מעצבת');
@@ -248,15 +310,32 @@ test('a change made in another tab surfaces here instead of being silently overw
 
   const otherTab = await context.newPage();
   await otherTab.goto('/');
+  // Merely opening a second tab must NOT raise the alarm. SessionStageReset
+  // rewrites the key on every load to strip manualStage, which at the
+  // StorageEvent level is indistinguishable from an edit — so this used to
+  // warn that her work was about to be overwritten when nothing of hers had
+  // changed, and a warning that fires on a non-event is one she learns to
+  // ignore, which costs the case it exists for.
+  await otherTab.evaluate((key) => {
+    const s = JSON.parse(localStorage.getItem(key) ?? '{}');
+    s.manualStage = 2;
+    localStorage.setItem(key, JSON.stringify(s));
+  }, STORAGE_KEY);
+  await expect(page.locator('.noticeWarn')).toHaveCount(0);
+
   await otherTab.evaluate((key) => {
     const s = JSON.parse(localStorage.getItem(key) ?? '{}');
     s.plan.flexibility = 'שונה מטאב אחר';
     localStorage.setItem(key, JSON.stringify(s));
   }, STORAGE_KEY);
 
-  await expect(page.locator('.notice p')).toContainText('התוכנית עודכנה בטאב אחר');
+  await expect(page.locator('.noticeWarn p')).toContainText('התוכנית עודכנה בטאב אחר');
   // The tab that made the change is not told anything about its own write.
-  await expect(otherTab.locator('.notice')).toHaveCount(0);
+  // Asserted on the *work* view: `.notice` is rendered only by page.tsx's Home,
+  // which ExperienceShell mounts only under view === 'work' — so checking this
+  // on the default home view could never fail, for any implementation.
+  await nav(otherTab, 'עבודה');
+  await expect(otherTab.locator('.noticeWarn')).toHaveCount(0);
   await otherTab.close();
 });
 

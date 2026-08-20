@@ -36,8 +36,13 @@ const probes = [
   {
     id: 'R2',
     label: 'work survives reload / restart',
-    met: /loadStoredState/.test(page) && /localStorage\.setItem\(STORAGE_KEY/.test(page) && /savedAt/.test(e2e),
-    why: 'the page must hydrate via loadStoredState, write back to STORAGE_KEY, and be covered by an e2e test that asserts savedAt',
+    // The write is asserted where the key lives, not where it is called from.
+    // This used to require the literal `localStorage.setItem(STORAGE_KEY` in
+    // page.tsx, which made moving that call into the module that owns the key
+    // — a fix, not a regression — read as R2 having been withdrawn.
+    met: /loadStoredState/.test(page) && /writeStoredState/.test(page)
+      && /localStorage\.setItem\(STORAGE_KEY/.test(storage) && /savedAt/.test(e2e),
+    why: 'the page must hydrate via loadStoredState, persist through writeStoredState (which writes STORAGE_KEY), and be covered by an e2e test that asserts savedAt',
   },
   {
     id: 'R3',

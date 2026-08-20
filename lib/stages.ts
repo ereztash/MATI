@@ -59,7 +59,22 @@ export type MatiState = {
   formative: Formative;
   summative: Summative;
   history: HistoryEntry[];
+  /** In-session override from the stage strip. Cleared on every load by design (app/session-stage-reset.tsx). */
   manualStage?: Stage;
+  /**
+   * Her answer to "which stage are you in?" during a calendar gap — a different
+   * thing from `manualStage`, which is why it is a different field.
+   *
+   * Storing the gap answer as `manualStage` made it both too short-lived and
+   * too long-lived at once, and both were verified in a browser: SessionStageReset
+   * wiped it on every load, so the question was re-asked on every visit for the
+   * four months a year the calendar has no answer; and nothing expired it, so a
+   * stage picked in November was still being asserted as "את בשלב תכנון" in
+   * December — the confident wrong assertion the gap screen exists to prevent.
+   * Keeping `chosenAt` lets it outlive a reload and stop mattering the moment a
+   * real window opens.
+   */
+  gapStage?: { stage: Stage; chosenAt: string };
   /** Before/after trail of substantive plan changes — see lib/plan-revisions.ts. */
   planRevisions: PlanRevision[];
   /** The plan exactly as it stood at the last save; the baseline each new save is diffed against. */
@@ -86,12 +101,57 @@ export const emptyState: MatiState = {
   planRevisions: [],
 };
 
+export const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
+
+/**
+ * The pilot's calendar windows, as data. `stageFromDate` and the labels the
+ * gap picker shows both read this table, so a window cannot move in one
+ * without moving in the other — previously the months lived here as `if`
+ * branches while two hand-written copies of "דצמבר–פברואר" restated them in
+ * JSX, and the months outside every window were described by nothing at all.
+ */
+const STAGE_WINDOWS: { stage: Stage; months: number[]; label: string }[] = [
+  { stage: 1, months: [7, 8, 9], label: 'יולי–ספטמבר' },
+  { stage: 2, months: [12, 1, 2], label: 'דצמבר–פברואר' },
+  { stage: 3, months: [5, 6], label: 'מאי–יוני' },
+];
+
 export function stageFromDate(date = new Date()): Stage | null {
   const month = date.getMonth() + 1;
-  if (month >= 7 && month <= 9) return 1;
-  if (month === 12 || month === 1 || month === 2) return 2;
-  if (month === 5 || month === 6) return 3;
-  return null;
+  return STAGE_WINDOWS.find((window) => window.months.includes(month))?.stage ?? null;
+}
+
+export function stageWindowLabel(stage: Stage): string {
+  return STAGE_WINDOWS.find((window) => window.stage === stage)?.label ?? '';
+}
+
+/** A gap is at most two months; past this the stored answer is about a different one. */
+const GAP_ANSWER_MAX_AGE_DAYS = 90;
+
+export type StageResolution = { stage: Stage | null; source: 'manual' | 'calendar' | 'gap-answer' };
+
+/**
+ * The single answer to "which stage is she in?", replacing four hand-rolled
+ * copies of `state.manualStage ?? stageFromDate() ?? 1` that had drifted apart —
+ * the `?? 1` in them is what made the home screen assert "את בשלב תכנון"
+ * through every gap month, and fixing one copy left the others asserting it.
+ *
+ * `null` means genuinely unknown, and callers are expected to ask rather than
+ * guess. The calendar outranks her gap answer on purpose: once a real window
+ * opens, the answer she gave about a gap is no longer about now.
+ */
+export function resolveStage(state: MatiState, now = new Date()): StageResolution {
+  if (state.manualStage) return { stage: state.manualStage, source: 'manual' };
+  const automatic = stageFromDate(now);
+  if (automatic) return { stage: automatic, source: 'calendar' };
+  const answered = state.gapStage;
+  if (answered) {
+    const ageDays = (now.getTime() - new Date(answered.chosenAt).getTime()) / 86_400_000;
+    if (Number.isFinite(ageDays) && ageDays >= 0 && ageDays <= GAP_ANSWER_MAX_AGE_DAYS) {
+      return { stage: answered.stage, source: 'gap-answer' };
+    }
+  }
+  return { stage: null, source: 'calendar' };
 }
 
 export function smartGoalLooksValid(goal: string) {
@@ -115,6 +175,20 @@ function hasValue(value: unknown): boolean {
 export function formativeStarted(formative: Formative) { return Object.values(formative.answers).some(hasValue); }
 export function canOpenStage(stage: Stage, state: MatiState) { if (stage === 1) return true; if (stage === 2) return planSaved(state); return planSaved(state) && formativeStarted(state.formative); }
 export function stage2SectionStarted(formative: Formative, id: keyof FormativeAnswers) { return hasValue(formative.answers[id]); }
+
+/**
+ * Why `canOpenStage` said no. Lives next to the rule rather than inside one
+ * component's handler, because there are two ways into a stage change — the
+ * stage strip and the calendar-gap picker — and only one of them used to check
+ * at all: the picker wrote `manualStage` unconditionally, so a first visit in a
+ * gap month could land on the summative screen with no plan, where the strip
+ * then rendered that same stage as current *and* locked at once.
+ */
+export function stageLockReason(stage: Stage): string {
+  return stage === 2
+    ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה שמורה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן. בואי נשלים את הבסיס בקצרה.'
+    : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת. גם מענה חלקי מספיק כדי ליצור בסיס.';
+}
 
 function num(value: string) { const cleaned = String(value).replace(/[^0-9.]/g, ''); const parsed = Number(cleaned); return Number.isFinite(parsed) && cleaned !== '' ? parsed : null; }
 export function ratioPercent(actual: string, planned: string) { const a = num(actual); const p = num(planned); if (a === null || p === null || p <= 0) return null; return Math.round(Math.min(999, (a / p) * 100)); }

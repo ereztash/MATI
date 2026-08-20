@@ -202,3 +202,53 @@ The console already discloses that its participant ID is per-device — *"מעב
 Two theories were driven live and found nothing: going back twice in the Stage 1 wizard, editing an earlier answer, and going forward twice again keeps the part index and part count correctly synced at every step, and the edited field survives intact without clobbering a sibling field. And extreme input — a 3,000-character paste into a short field, and HTML/script-like text mixed with Hebrew, English, and special characters — saves correctly, renders with no unescaped HTML anywhere in the page, and raises no console error traceable to the input itself. Recorded here rather than left unmentioned, since silence on a tested theory reads the same as an untested one.
 
 **Suite after this pass: 107 unit tests, 21 e2e tests (6 new — 2 accessibility, 4 instructor), all 3 contract checks, readiness unchanged at 6/8.** None of this closes a new DoD row; every fix here is the same category as the wizard button and the delete friction — the product staying honest about its own limits instead of failing silently — and is recorded here for the same reason those were.
+
+## The review of the previous sweep — every finding verified one by one, 2026-08-20
+
+A multi-angle code review of the commit above produced fifteen findings. Rather than accept or dismiss any of them on reading, each was reproduced — or refuted — against the running app, the built artifact, or the real function. Eleven were confirmed and fixed, two were **disproved**, one was **measured and rejected**, and one turned out to understate a far more serious bug sitting next to it.
+
+The pattern worth keeping is the same one this document has been recording all along, arriving from the other direction: **a review finding is a hypothesis, not a fact.** Two of these were confidently argued, internally consistent, and wrong.
+
+| # | Finding | Verified how | Outcome |
+|---|---|---|---|
+| 1 | Gap picker wrote `manualStage` with no `canOpenStage` gate | browser | ✅ fixed |
+| 2 | Picker overwrote an unreadable save with a blank one | browser | ✅ fixed |
+| 3 | Blocked store left the picker inert and silent | browser | ✅ fixed |
+| 4 | Static prerender baked the build month into the shipped HTML | build artifact + live | ✅ fixed |
+| 5 | Gap answer wiped on every reload | browser | ✅ fixed |
+| 6 | Cross-tab warning fired on the app's own housekeeping write | browser | ✅ fixed |
+| 7 | A deletion in another tab was announced as an "update" | code trace | ✅ fixed |
+| 8 | Save-failure notice never cleared, and clobbered other messages | browser | ✅ fixed |
+| 9 | `removeItem` in the delete handler left unguarded | browser | ✅ fixed |
+| 10 | Setting-word cull half-applied (`שיעור`, `תצפית` still anchored) | real function | ✅ fixed |
+| 11 | Autosave writes are an unthrottled per-keystroke cost | measured | ❌ rejected — see below |
+| 12 | Accessibility loop never reached Stage 3 | test run | ✅ fixed |
+| 13 | Cross-tab assertion was vacuous | code trace | ✅ fixed |
+| 14 | Picker markup, stage names and write guards duplicated | grep | ✅ fixed |
+| 15 | Dead and unsynced CSS after the heading migration | grep | ✅ fixed |
+
+### The finding that mattered most was not on the list
+
+Verifying #1 meant clicking a stage button without `force`, which failed. The cause was not the gate: **`document.elementFromPoint` at the centre of all three stage buttons returned the sticky work-session bar, on desktop and on a Pixel 7 alike.** Stage navigation in the work view was completely unclickable for a real user. `WorkSessionLayer` renders its bar before the header in the DOM, so the header scrolls underneath it.
+
+This document already carried a note about that overlap, describing it as hiding "the top ~40px of the stage strip". It was hiding the whole strip. Every directed test clicked with `force: true`, which bypasses Playwright's actionability check — so twenty-three passing tests, four of them written specifically about stage switching, all reported a working control that nobody could operate. Fixed by letting the header out-stack the bar, and pinned by a test that asserts reachability with `elementFromPoint` rather than by clicking.
+
+`force: true` remains correct in the one test that uses it deliberately: a locked stage carries `aria-disabled` rather than `disabled` precisely so it stays clickable and can explain itself. The distinction — advisory-disabled versus physically covered — is why that test now sits next to a separate one that measures the geometry.
+
+### Two findings were wrong
+
+**The heading order in the work view was reported as `h2 → h1`**, on the grounds that the side card's `<h2>` precedes the main card's `<h1>` in the DOM. Enumerating the actually-visible headings in a browser returns `h1 → h2 → h3 → h3 → h3`: the side card is `display:none` in this view, so its heading never reaches a screen reader. No fix; the claim does not survive contact with the rendered page.
+
+**The autosave was reported as a per-keystroke performance problem** — "~52 KB serialized and written synchronously per character", "roughly 300 MB of cumulative serialize+write". Measured on a realistically-filled state (nine sections of 400-character evidence, twelve history entries, twenty revisions): **18,792 characters, and 0.18 ms per serialize-and-write — 1.1 % of one frame's budget.** A full 400-character answer costs about 72 ms of main-thread time in total. The extrapolation was an order of magnitude out, and no debounce was added.
+
+The suggested "once-failed latch" was rejected on stronger grounds than cost: the blocked-store banner clears itself precisely *because* the next keystroke retries and succeeds. A latch would have re-introduced finding #8.
+
+### What changed structurally
+
+Four surfaces each carried their own copy of `state.manualStage ?? stageFromDate() ?? 1`, and the previous commit fixed exactly one of them — which is why the context ribbon and the work-session bar were still asserting Stage 1 during a gap while the screen above them said the stage was unknown. That expression is now `resolveStage` in `lib/stages.ts`, returning `null` for "ask her" and used by all four.
+
+The gap answer also needed to stop being `manualStage`, which was both too short-lived and too long-lived for it: `SessionStageReset` wipes that field on every load by design, so the question was re-asked on every visit for four months a year — and nothing expired it, so a stage chosen in November was still being asserted as "את בשלב תכנון" in December. It is now `gapStage`, carrying the date it was given, consulted only while the calendar itself has no answer.
+
+`lib/state-storage.ts` owned every read and no writes, which is how three hand-rolled `try/catch` blocks around `setItem` drifted into three different policies and a fourth call site was left unguarded entirely. It now owns `writeStoredState`, `patchStoredState` and `clearStoredState`; `patchStoredState` refuses to write over a save it could not read, which is what finding #2 was.
+
+**Suite after this pass: 109 unit tests, 23 e2e tests, all four checks, readiness unchanged at 6/8.** One readiness probe was rewritten: it required the literal string `localStorage.setItem(STORAGE_KEY` inside `app/page.tsx`, so moving that call into the module that owns the key read as R2 being withdrawn. It now asserts the behaviour rather than the location.

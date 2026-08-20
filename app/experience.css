@@ -144,6 +144,15 @@
 .workExperience .institutionBar,
 .workExperience .welcomeBlock { display: none; }
 .workExperience .appHeader { padding-top: 0; background: transparent; border: 0; box-shadow: none; }
+/* WorkSessionLayer renders its sticky bar BEFORE this header in the DOM, so
+   the header scrolled underneath it: measured on desktop and on a Pixel 7,
+   the bar covered the whole .stageStrip and the centre of all three stage
+   buttons returned the bar from elementFromPoint — stage navigation was
+   entirely unclickable in the work view. (The e2e test passed only because it
+   clicks with force:true, which bypasses actionability.) The strip stays on
+   top while it is on screen; once it scrolls away the bar pins as intended. */
+.workExperience .appHeader { position: relative; z-index: 70; }
+.workExperience .stageStrip { background: var(--soft-bg, var(--bg)); border-radius: 14px; }
 .workExperience .workspace { grid-template-columns: 1fr; max-width: 980px; }
 .workExperience .sideCard { display: none; }
 .workExperience .mainCard { border-radius: 22px; }

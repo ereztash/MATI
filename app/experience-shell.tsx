@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  canOpenStage,
   emptyState,
   implementationStatus,
   MatiState,
@@ -9,14 +10,17 @@ import {
   recommendedActions,
   scoreDimensions,
   selfEffectivenessAverage,
+  resolveStage,
   stageFromDate,
+  stageLockReason,
+  stageNames,
   Stage,
 } from '../lib/stages';
 import { calendarContext, greetingForDaypart } from '../lib/context-engine';
-import { readStoredState, STORAGE_KEY } from '../lib/state-storage';
+import { patchStoredState, readStoredState } from '../lib/state-storage';
+import StagePicker from './stage-picker';
 
 type View = 'home' | 'work' | 'insight' | 'journey';
-const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 
 function nextAction(state: MatiState, stage: Stage) {
   if (stage === 1) {
@@ -47,6 +51,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const [view, setView] = useState<View>('home');
   const [state, setState] = useState<MatiState>(emptyState);
   const [now, setNow] = useState<Date | null>(null);
+  const [pickerNotice, setPickerNotice] = useState('');
 
   const refresh = () => { setState(readStoredState()); setNow(new Date()); };
 
@@ -69,19 +74,20 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
     };
   }, []);
 
-  const automaticStage = now ? stageFromDate(now) : stageFromDate();
+  // `now` is set by the mount effect, so it is null on the server and on the
+  // first client render. Anything derived from the date has to wait for it:
+  // this route is statically prerendered, and reading the clock before then
+  // bakes the build machine's month into the shipped HTML.
+  const dateKnown = now !== null;
   // Regression: this used to fall back to 1 unconditionally, so the home
-  // screen confidently opened with "את בשלב תכנון" through October,
-  // November, March and April — months stageFromDate() deliberately returns
-  // null for, specifically so nothing here has to guess. page.tsx's own work
-  // view already refuses to invent a stage in exactly this situation (the
-  // gapShell screen); the home view silently did the opposite. `?? 1` still
-  // backs every OTHER view below so nothing there breaks without a chosen
-  // stage — only the home hero, the one screen she sees first, now asks
-  // instead of asserting.
-  const inCalendarGap = !state.manualStage && automaticStage === null;
-  const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
-  const calendar = now ? calendarContext(now, automaticStage) : null;
+  // screen confidently opened with "את בשלב תכנון" through October, November,
+  // March and April — months stageFromDate() deliberately returns null for,
+  // specifically so nothing here has to guess. resolveStage owns that decision
+  // for every surface now, and returning null is how it says "ask her".
+  const resolved = now ? resolveStage(state, now) : { stage: null, source: 'calendar' as const };
+  const inCalendarGap = dateKnown && resolved.stage === null;
+  const activeStage = (resolved.stage ?? 1) as Stage;
+  const calendar = now ? calendarContext(now, stageFromDate(now)) : null;
   const action = nextAction(state, activeStage);
   const dims = useMemo(() => scoreDimensions(state), [state]);
   const lowest = [...dims].sort((a, b) => a.score - b.score)[0];
@@ -94,19 +100,26 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
 
   const go = (next: View) => { refresh(); setView(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  // Same write pattern page.tsx's own switchStage uses (read → patch →
-  // write back), done directly since this component owns no shared state
-  // with page.tsx's Home — they each read the same storage key independently.
+  /**
+   * The picker's three buttons are a stage change like any other, so they go
+   * through the same gate the stage strip does. This used to write
+   * `manualStage` unconditionally: verified in a browser, a first visit in a
+   * gap month could click "הערכה מסכמת" with nothing saved and land on the
+   * closing-the-year screen over an empty plan, while the strip rendered that
+   * stage as `aria-current="step"` and `aria-disabled="true"` at once and the
+   * side card claimed it had been "נבחר ידנית לאחר בדיקת תנאי המעבר".
+   *
+   * Failures are reported rather than swallowed. The previous empty `catch`
+   * deferred to page.tsx's notice, which cannot appear here — Home is mounted
+   * only under `view === 'work'` — so with a blocked store all three buttons
+   * were verified inert and silent, on the only screen this view offers.
+   */
   const chooseStage = (stage: Stage) => {
-    const current = readStoredState();
-    // A full/blocked store must not throw uncaught here either — page.tsx's
-    // own guarded save is what surfaces the real notice; this one only
-    // needs to not crash the picker click itself.
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, manualStage: stage }));
-    } catch {
-      // no-op — see above
-    }
+    if (!canOpenStage(stage, state)) { setPickerNotice(stageLockReason(stage)); return; }
+    const result = patchStoredState({ gapStage: { stage, chosenAt: new Date().toISOString() } });
+    if (result === 'blocked') { setPickerNotice('לא הצלחתי לשמור את הבחירה — ייתכן שהאחסון בדפדפן מלא או חסום (למשל בגלישה פרטית). אפשר להמשיך לעבוד דרך הלשונית "עבודה".'); return; }
+    if (result === 'unreadable') { setPickerNotice('לא הצלחתי לקרוא את המידע השמור במכשיר, ולכן לא כתבתי עליו. כדאי לפתוח את "עבודה" כדי לראות מה נשמר לפני שממשיכות.'); return; }
+    setPickerNotice('');
     refresh();
   };
 
@@ -126,33 +139,38 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
         <div className="experiencePrivacy">המידע נשאר במכשיר</div>
       </header>
 
-      {view === 'home' && inCalendarGap && (
+      {view === 'home' && (
         <main className="experiencePage homeExperience">
           <section className="homeHero">
             <p className="homeGreeting">{greeting}{instructor ? `, ${instructor}` : ''}</p>
-            <h1>באיזה שלב בלוח השנה את נמצאת?</h1>
-            <p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p>
+            {/* Everything below the greeting is withheld until `dateKnown`.
+                `/` is statically prerendered, so without this the BUILD
+                machine's month is baked into the shipped HTML: verified by
+                curling the served page, which returned `<h1>את בשלב תכנון`
+                plus homeDecisionCard and homeGrid, while a client opening it
+                in October renders the gap picker and neither card — different
+                element types at the same position, i.e. a structural
+                hydration mismatch, and a first paint asserting exactly the
+                stage this screen exists to stop asserting. It also removes a
+                pre-existing text mismatch (React #418, reproduced on the
+                served build in December): stageFromDate() with no argument
+                reads build time on the server and real time on the client. */}
+            {dateKnown && (inCalendarGap ? (
+              <>
+                <h1>באיזה שלב בלוח השנה את נמצאת?</h1>
+                <p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p>
+              </>
+            ) : (
+              <>
+                <h1>את בשלב <span>{stageNames[activeStage]}</span></h1>
+                <p>{calendar?.stagePosition === 'closing' && calendar.daysToStageEnd !== null ? `נשארו כ־${calendar.daysToStageEnd} ימים לחלון הזה. כדאי לסגור את מה שמשנה החלטה.` : calendar?.stagePosition === 'early' ? 'זה זמן טוב לבנות בסיס לפני שמקבעים החלטות.' : 'לא צריך לעשות הכול עכשיו. מספיק להתקדם בהחלטה אחת משמעותית.'}</p>
+              </>
+            ))}
           </section>
-          {/* Same class page.tsx's own gapShell buttons use — not homeGrid/
-              homeStatusCard, whose min-height and 2-column layout are sized
-              for the decision-card pairing elsewhere and visibly fight this
-              3-button choice for the same grid-template-columns. */}
-          <div className="gapOptions">
-            <button onClick={() => chooseStage(1)}><b>תכנון</b><span>עד סוף ספטמבר</span></button>
-            <button onClick={() => chooseStage(2)}><b>הערכה מעצבת</b><span>דצמבר–פברואר</span></button>
-            <button onClick={() => chooseStage(3)}><b>הערכה מסכמת</b><span>מאי–יוני</span></button>
-          </div>
-        </main>
-      )}
 
-      {view === 'home' && !inCalendarGap && (
-        <main className="experiencePage homeExperience">
-          <section className="homeHero">
-            <p className="homeGreeting">{greeting}{instructor ? `, ${instructor}` : ''}</p>
-            <h1>את בשלב <span>{stageNames[activeStage]}</span></h1>
-            <p>{calendar?.stagePosition === 'closing' && calendar.daysToStageEnd !== null ? `נשארו כ־${calendar.daysToStageEnd} ימים לחלון הזה. כדאי לסגור את מה שמשנה החלטה.` : calendar?.stagePosition === 'early' ? 'זה זמן טוב לבנות בסיס לפני שמקבעים החלטות.' : 'לא צריך לעשות הכול עכשיו. מספיק להתקדם בהחלטה אחת משמעותית.'}</p>
-          </section>
+          {dateKnown && inCalendarGap && <StagePicker onChoose={chooseStage} state={state} notice={pickerNotice} />}
 
+          {dateKnown && !inCalendarGap && (<>
           <section className="homeDecisionCard">
             <div>
               <span className="homeKicker">הדבר הבא שכדאי לעשות</span>
@@ -176,6 +194,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
               </dl>
             </div>
           </section>
+          </>)}
         </main>
       )}
 

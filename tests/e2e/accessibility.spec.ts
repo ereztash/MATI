@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { nav, savedPlan, seed, STORAGE_KEY } from './fixtures';
+import { atDate, IN_STAGE_1, nav, savedPlan, seed, STORAGE_KEY } from './fixtures';
+
+// Same reason as instructor.spec.ts: both scans below need the work view to be
+// on a real stage. `.ganttTrack` only exists inside Stage 1, and in a gap month
+// there is no `.stageStrip` to click at all.
+test.beforeEach(async ({ page }) => { await atDate(page, IN_STAGE_1); });
 
 /**
  * A real axe-core scan, not a hand-picked checklist — found three distinct,
@@ -41,12 +46,23 @@ test('Stage 1 has no aria-prohibited-attr, heading-order, or missing-h1 violatio
 });
 
 test('every stage opens with exactly one h1, and nothing after it skips a level', async ({ page }) => {
-  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
+  // The formative section has to be started, or this loop never reaches Stage 3:
+  // canOpenStage(3) requires planSaved && formativeStarted, so switchStage(3)
+  // refused and the third iteration silently re-scanned Stage 2 — leaving
+  // SummativeMode, whose headings this suite exists to check, never rendered.
+  await seed(page, STORAGE_KEY, {
+    plan: savedPlan,
+    formative: { route: 'short', answers: { q1: { goalAchievement: 'mostly' } }, savedAt: '2026-02-01T10:00:00.000Z' },
+    history: [],
+  });
   await page.goto('/');
   await nav(page, 'עבודה');
 
   for (const label of ['תכנון', 'הערכה מעצבת', 'הערכה מסכמת']) {
-    await page.locator('.stageStrip button', { hasText: label }).click({ force: true });
+    await page.locator('.stageStrip button', { hasText: label }).click();
+    // Assert the stage actually changed. Without this the loop can pass three
+    // times over the same DOM and report it as covering all three stages.
+    await expect(page.locator('.view-work .sectionHead .kicker').first()).toContainText(label);
     // Exactly one *visible* h1 — not a raw DOM count. page.tsx's own legacy
     // .welcomeBlock heading ("שלום, כאן עוצרות...") is still in the DOM
     // alongside the stage-specific one added here, correctly hidden from

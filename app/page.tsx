@@ -1,20 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   analyzeInteraction, canOpenStage, deleteStakes, emptyState, fieldHoursPercent, FormativeAnswers, formativeCompletion, formativeStarted,
   hasLargeGoalResultGap, implementationStatus, managerMeetingPercent, MatiState, planReady, planSaved, recommendedActions,
-  rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, Stage, stageFromDate,
+  rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, resolveStage, Stage, stageFromDate, stageLockReason, stageNames,
   studentImprovementPercent, summarizeLongText,
 } from '../lib/stages';
-import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
+import { clearStoredState, loadStoredState, sameExceptNavigation, STORAGE_KEY, writeStoredState } from '../lib/state-storage';
 import { evaluateSmartGoal } from '../lib/smart-criteria';
 import { addDays, buildPersonalGantt, timelinePercent, toDateOnly, TimelineMilestone } from '../lib/plan-timeline';
 import { changedFieldsSummary, diffPlans } from '../lib/plan-revisions';
 import { ANCHOR_HINT, needsConcreteAnchor } from '../lib/concrete-anchor';
 import { independenceReading } from '../lib/independence';
-
-const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
+import StagePicker from './stage-picker';
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
 
 function Stars({ score }: { score: number }) { return <span className="stars" aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>; }
@@ -23,9 +22,20 @@ export default function Home() {
   const [state, setState] = useState<MatiState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
   const [notice, setNotice] = useState('');
+  // Two standing conditions, kept out of `notice` on purpose. `notice` is
+  // transient feedback for something she just did, and every writer of it
+  // overwrites the last — so routing a condition through it made the condition
+  // both un-clearable (nothing reset it once the store recovered) and
+  // destructive (one keystroke replaced the "which fields are missing"
+  // guidance from a blocked save). As their own flags they clear themselves
+  // and can be shown alongside whatever `notice` is currently saying.
+  const [saveBlocked, setSaveBlocked] = useState(false);
+  const [otherTabWrote, setOtherTabWrote] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const skipNextSave = useRef(false);
+  const warnedRef = useRef(false);
   const autoStage = stageFromDate();
-  const activeStage = state.manualStage ?? autoStage;
+  const activeStage = resolveStage(state).stage;
   const dimensions = useMemo(() => scoreDimensions(state), [state]);
   const profile = useMemo(() => analyzeInteraction(state), [state]);
 
@@ -44,11 +54,9 @@ export default function Home() {
     // each character → effect fires again → throws again) crashes the
     // renderer outright. A caught write can't do that; it can only fail to
     // persist, which is now something she is actually told.
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      setNotice('לא הצלחתי לשמור באופן אוטומטי כרגע — ייתכן שהאחסון בדפדפן מלא או חסום (למשל בגלישה פרטית). כדאי להעתיק את מה שכתבת למקום אחר לפני שסוגרים את הדף.');
-    }
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    const result = writeStoredState(state);
+    setSaveBlocked(result !== 'ok');
   }, [state, hydrated]);
   useEffect(() => {
     // The browser's native `storage` event fires only in OTHER tabs, never
@@ -64,7 +72,24 @@ export default function Home() {
     // rather than let it happen silently. It does not touch `state` itself —
     // showing the notice must never discard whatever she's mid-typing here.
     const onStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY) setNotice('התוכנית עודכנה בטאב אחר באותו דפדפן. שמירה כאן תחליף את מה ששונה שם — כדאי לרענן את הדף לפני שממשיכות, אם שני הטאבים פתוחים בכוונה.');
+      if (event.key !== STORAGE_KEY) return;
+      // A deletion is not an update. The footer's delete-local-data button
+      // calls removeItem, which reaches other tabs as newValue === null —
+      // telling those tabs the plan was "updated elsewhere" and that saving
+      // here would replace it, when in fact their next keystroke writes the
+      // whole deleted plan back. Reload rather than warn: this tab's copy is
+      // of something that no longer exists.
+      if (event.newValue === null) { window.location.reload(); return; }
+      // Ignore writes that changed nothing an instructor did. SessionStageReset
+      // strips `manualStage` on every page load, so merely opening a second tab
+      // used to raise a data-loss warning in the first one.
+      // Already warned: the message does not change and the comparison below
+      // parses both payloads, so there is nothing to gain by redoing it on
+      // every keystroke the other tab makes.
+      if (warnedRef.current) return;
+      if (event.oldValue !== null && sameExceptNavigation(event.oldValue, event.newValue)) return;
+      warnedRef.current = true;
+      setOtherTabWrote(true);
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -75,10 +100,16 @@ export default function Home() {
   }
   function switchStage(stage: Stage) {
     if (!canOpenStage(stage, state)) {
-      setNotice(stage === 2 ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה שמורה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן. בואי נשלים את הבסיס בקצרה.' : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת. גם מענה חלקי מספיק כדי ליצור בסיס.');
+      setNotice(stageLockReason(stage));
       return;
     }
-    setNotice(''); setShowAnalysis(false); setState((prev) => ({ ...prev, manualStage: stage }));
+    setNotice(''); setShowAnalysis(false);
+    // In a calendar gap this is her answer to "which stage are you in", not a
+    // temporary override of a stage the calendar named — so it is recorded as
+    // one, and survives the reload that clears manualStage by design.
+    setState((prev) => (stageFromDate() === null
+      ? { ...prev, gapStage: { stage, chosenAt: new Date().toISOString() } }
+      : { ...prev, manualStage: stage }));
   }
   function updatePlan(key: keyof MatiState['plan'], value: string) { setState((s) => ({ ...s, plan: { ...s.plan, [key]: value, savedAt: undefined } })); }
   function updateContext(key: keyof MatiState['formative']['context'], value: string) { setState((s) => ({ ...s, formative: { ...s.formative, context: { ...s.formative.context, [key]: value }, savedAt: undefined } })); }
@@ -122,7 +153,7 @@ export default function Home() {
     setNotice(hasLargeGoalResultGap(state) ? 'אני רואה פער גדול בין המטרות לתוצאות. זו הזדמנות לחשוב אחרת: התמונה המקצועית למטה מסמנת איפה כדאי לשנות מנגנון, לא רק להוסיף מאמץ.' : 'הרפלקציה נשמרה. התמונה המקצועית למטה מבוססת על הנתונים שהזנת — לא על ניחוש.');
   }
 
-  if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>באיזה שלב בלוח השנה את נמצאת?</h1><p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p><div className="gapOptions"><button onClick={() => switchStage(1)}><b>תכנון</b><span>עד סוף ספטמבר</span></button><button onClick={() => switchStage(2)}><b>הערכה מעצבת</b><span>דצמבר–פברואר</span></button><button onClick={() => switchStage(3)}><b>הערכה מסכמת</b><span>מאי–יוני</span></button></div>{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
+  if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>באיזה שלב בלוח השנה את נמצאת?</h1><p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p><StagePicker state={state} onChoose={switchStage} />{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
 
   const instructor = state.formative.context.instructorName.trim();
   const previousFormative = [...state.history].reverse().find((h) => h.stage === 2);
@@ -132,11 +163,28 @@ export default function Home() {
       <div className="welcomeBlock"><p className="eyebrow">מתי המתי״א</p><h1>{instructor ? `שלום ${instructor}, ` : 'שלום, '}כאן עוצרות כדי לראות מה באמת זז.</h1><p className="lead">את נמצאת בשלב <strong>{stageNames[activeStage]}</strong>. המטרה כאן היא להפוך את העבודה המקצועית לראיות, החלטות וצעדים שאפשר לקחת חזרה לשטח.</p><div className="autosave"><span className="autosaveDot" /> הטיוטה נשמרת אוטומטית</div></div>
       <nav className="stageStrip" aria-label="שלבי העבודה לאורך השנה">{([1, 2, 3] as Stage[]).map((stage) => { const locked = !canOpenStage(stage, state); const completed = stage === 1 ? planSaved(state) : stage === 2 ? Boolean(state.formative.savedAt) : Boolean(state.summative.savedAt); return <button key={stage} onClick={() => switchStage(stage)} className={`stage ${activeStage === stage ? 'active' : ''} ${completed ? 'completed' : ''}`} aria-disabled={locked} aria-current={activeStage === stage ? 'step' : undefined}><span className="stageNumber" aria-hidden="true">{completed ? '✓' : stage}</span><span className="stageText"><strong>{stageNames[stage]}</strong><small>{locked ? 'ייפתח לאחר השלמת הבסיס' : activeStage === stage ? 'כאן את נמצאת עכשיו' : completed ? 'נשמר' : 'אפשר לעבור'}</small></span>{locked && <span className="lock" aria-hidden="true">🔒</span>}</button>; })}</nav>
     </header>
+    {saveBlocked && <div className="notice noticeWarn" role="alert"><span aria-hidden="true">!</span><p>לא הצלחתי לשמור באופן אוטומטי כרגע — ייתכן שהאחסון בדפדפן מלא או חסום (למשל בגלישה פרטית). כדאי להעתיק את מה שכתבת למקום אחר לפני שסוגרים את הדף.</p></div>}
+    {otherTabWrote && <div className="notice noticeWarn" role="alert"><span aria-hidden="true">!</span><p>התוכנית עודכנה בטאב אחר באותו דפדפן. שמירה כאן תחליף את מה ששונה שם — כדאי לרענן את הדף לפני שממשיכות, אם שני הטאבים פתוחים בכוונה.</p></div>}
     {notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}
-    {!notice && <AdaptiveSignal profile={profile} activeStage={activeStage} />}
+    {!notice && !saveBlocked && !otherTabWrote && <AdaptiveSignal profile={profile} activeStage={activeStage} />}
     <section className="workspace" id="main-workspace"><aside className="sideCard"><span className="kicker">נכון לעכשיו</span><h2>{stageNames[activeStage]}</h2><p>{activeStage === autoStage ? 'זה השלב המתאים לפי לוח השנה.' : 'השלב נבחר ידנית לאחר בדיקת תנאי המעבר.'}</p><div className="statusList" aria-label="התקדמות שנתית"><StatusRow done={planSaved(state)} label="תוכנית עבודה שמורה" /><StatusRow done={Boolean(state.formative.savedAt)} label="הערכה מעצבת" /><StatusRow done={Boolean(state.summative.savedAt)} label="סיכום שנתי" /></div>{activeStage === 2 && <ProgressRing value={formativeCompletion(state)} label="מילוי המסלול" />}<div className="sideHint"><strong>לא צריך לסיים הכול עכשיו.</strong><span>אפשר לעצור ולחזור מאותו מכשיר. גם מידע חלקי יכול לשפר החלטה.</span></div></aside>
       <div className="mainCard">{activeStage === 1 && <PlanMode state={state} updatePlan={updatePlan} savePlan={savePlan} dimensions={dimensions} setState={setState} />}{activeStage === 2 && <FormativeMode state={state} updateContext={updateContext} updateAnswer={updateAnswer} updatePost={updatePost} setState={setState} saveFormative={saveFormative} dimensions={dimensions} profile={profile} previousFormative={previousFormative?.note} showAnalysis={showAnalysis || Boolean(state.formative.savedAt)} />}{activeStage === 3 && <SummativeMode state={state} setState={setState} addHistory={addHistory} />}</div></section>
-    <footer><span>מתי המתי״א · מתי״א רג״ב · גרסת פיילוט</span><details className="deleteLocal"><summary className="textButton">מחיקת המידע המקומי</summary><div className="deleteLocalPanel"><p>{deleteStakes(state)}</p><button type="button" className="deleteLocalConfirm" onClick={() => { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY); setState(emptyState); setNotice('המידע המקומי נמחק.'); }}>כן, למחוק את הכל</button></div></details></footer>
+    <footer><span>מתי המתי״א · מתי״א רג״ב · גרסת פיילוט</span><details className="deleteLocal"><summary className="textButton">מחיקת המידע המקומי</summary><div className="deleteLocalPanel"><p>{deleteStakes(state)}</p><button type="button" className="deleteLocalConfirm" onClick={() => {
+        // The one storage call the guarding sweep missed. In a browser that
+        // throws on localStorage access rather than on quota (a locked-down
+        // profile, "block all cookies"), an unguarded removeItem threw out of
+        // this handler before setState and setNotice could run: nothing
+        // deleted, nothing confirmed, nothing refused — on the single action
+        // in the app that carries a privacy promise.
+        const result = clearStoredState();
+        if (result !== 'ok') { setNotice('לא הצלחתי למחוק את המידע — הדפדפן חוסם גישה לאחסון המקומי. אפשר למחוק אותו דרך הגדרות האתר בדפדפן.'); return; }
+        // Clearing state re-fires the autosave, which put the key straight
+        // back — so "המידע המקומי נמחק" was followed by mati-v2 existing again
+        // one render later. Skip exactly that write; the next real edit saves
+        // normally.
+        skipNextSave.current = true;
+        setState(emptyState); setNotice('המידע המקומי נמחק.');
+      }}>כן, למחוק את הכל</button></div></details></footer>
   </main></>;
 }
 
