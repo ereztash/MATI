@@ -69,15 +69,58 @@ test('an empty state produces no signals at all', () => {
   assert.deepEqual(extractOrganizationalSignals(migrateState({})), []);
 });
 
+const signal = (key: string, value: unknown) => ({ key, stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' }) as OrganizationalSignal;
+
+/**
+ * Every directional key, in both directions, over the instrument's real value
+ * vocabulary — not a sample of it.
+ *
+ * The previous version of this test named four keys out of nine and was called
+ * "concern is only assigned where the instrument has a direction", which reads
+ * as coverage of the instrument. It was not: inverting the direction of
+ * meeting_execution, implementation_depth, student_impact, resource_allocation,
+ * teacher_independence and sustainability all at once left all 113 unit tests
+ * green (verified by mutation, 2026-08-20). That matters more here than in most
+ * places — signalConcern is what `adverseShare` counts, so an inverted
+ * direction does not crash anything, it just quietly tells the organization
+ * that a struggling cohort is fine.
+ *
+ * Values are the answer unions from lib/stages.ts (Formative q1/q3/q4/q6/q7),
+ * so a new option added to an answer without a decision about its direction
+ * shows up here as a missing case rather than defaulting to "no concern".
+ */
+const CONCERN_DIRECTIONS: Array<[string, unknown[], unknown[]]> = [
+  //  key                     concern                 not a concern
+  ['goal_attainment',        ['none', 'partial'],    ['mostly', 'full']],
+  ['meeting_execution',      ['under70'],            ['70-90', '90-100']],
+  ['implementation_depth',   ['shallow', 'partial'], ['consistent']],
+  ['student_impact',         ['none', 'low'],        ['medium', 'high']],
+  ['manager_commitment',     ['low', 'resistance'],  ['high', 'medium']],
+  ['resource_allocation',    ['no', 'partial'],      ['yes']],
+  ['teacher_independence',   ['none', 'partial'],    ['most', 'all']],
+  ['sustainability',         ['no', 'partial'],      ['yes']],
+  ['team_feedback_presence', [false],                [true]],
+];
+
+test('concern is assigned in the right direction for every directional signal', () => {
+  for (const [key, concerning, benign] of CONCERN_DIRECTIONS) {
+    for (const value of concerning) {
+      assert.equal(signalConcern(signal(key, value)), true, `${key}=${String(value)} must read as a concern`);
+    }
+    for (const value of benign) {
+      assert.equal(signalConcern(signal(key, value)), false, `${key}=${String(value)} must NOT read as a concern`);
+    }
+  }
+});
+
 test('concern is only assigned where the instrument has a direction', () => {
-  const signal = (key: string, value: unknown) => ({ key, stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' }) as OrganizationalSignal;
-  assert.equal(signalConcern(signal('goal_attainment', 'partial')), true);
-  assert.equal(signalConcern(signal('goal_attainment', 'full')), false);
-  assert.equal(signalConcern(signal('manager_commitment', 'resistance')), true);
-  assert.equal(signalConcern(signal('team_feedback_presence', false)), true);
   // Percentages have no approved professional cut-off, so they stay neutral.
   assert.equal(signalConcern(signal('implementation_rate', 20)), null);
   assert.equal(signalConcern(signal('student_improvement_rate', 5)), null);
+  assert.equal(signalConcern(signal('manager_meeting_rate', 0)), null);
+  assert.equal(signalConcern(signal('resource_allocation_rate', 100)), null);
+  // An unanswered question is not a quiet "no concern" either.
+  assert.equal(signalConcern(signal('goal_attainment', '')), false);
 });
 
 test('the privacy floor blocks projection and classification below the cohort size', () => {
@@ -113,6 +156,33 @@ test('a systemic candidate needs spread, persistence, impact and a majority', ()
   assert.equal(classifySystemicPattern(rows(2, 2, true)).classification, 'persistent_pattern');
   assert.equal(classifySystemicPattern(rows(3, 2, true)).classification, 'systemic_candidate');
   assert.equal(classifySystemicPattern(rows(3, 2, false)).classification, 'persistent_pattern', 'no majority adverse');
+});
+
+test('the reasons a decision gives are true at the exact threshold, not one past it', () => {
+  // The classification thresholds above are pinned; the `reasons` array beside
+  // them was not, so `contexts >= 2`, `periods >= 2` and `adverseShare >= 0.5`
+  // could each be tightened to `>` with the whole suite still green. Those
+  // strings are what the organizational console shows a manager as the
+  // justification for surfacing something, so a reason that quietly stops
+  // appearing at exactly two contexts is a decision explained wrongly rather
+  // than a crash. Exactly-at-the-boundary is the only interesting case.
+  const rows = (contexts: number, periods: number, adverseOf: number): AggregatedSignalObservation[] =>
+    Array.from({ length: 4 }, (_, i) => ({
+      key: 'goal_attainment', contributorId: `c${i}`, contextId: `ctx${i % contexts}`,
+      periodId: `2026-0${(i % periods) + 1}`, adverse: i < adverseOf, operationalImpact: 'high',
+    }));
+
+  const twoContextsTwoPeriods = classifySystemicPattern(rows(2, 2, 4)).reasons;
+  assert.ok(twoContextsTwoPeriods.includes('cross_context_spread'), 'exactly two contexts is already spread');
+  assert.ok(twoContextsTwoPeriods.includes('persistence'), 'exactly two periods is already persistence');
+
+  const oneOfEach = classifySystemicPattern(rows(1, 1, 4)).reasons;
+  assert.ok(!oneOfEach.includes('cross_context_spread'), 'a single context is not spread');
+  assert.ok(!oneOfEach.includes('persistence'), 'a single period is not persistence');
+
+  // Exactly half adverse counts as a majority by this instrument's definition.
+  assert.ok(classifySystemicPattern(rows(2, 2, 2)).reasons.includes('majority_adverse'), 'half is the documented cut-off');
+  assert.ok(!classifySystemicPattern(rows(2, 2, 1)).reasons.includes('majority_adverse'), 'a quarter is not');
 });
 
 test('a local cluster surfaces for inquiry only when it bears on implementation', () => {

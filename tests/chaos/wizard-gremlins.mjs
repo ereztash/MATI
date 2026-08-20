@@ -59,7 +59,18 @@ async function main() {
   const page = await context.newPage();
 
   const findings = { consoleErrors: [], pageErrors: [], dialogs: [], deadEnds: [] };
-  page.on('console', (msg) => { if (msg.type() === 'error') findings.consoleErrors.push(msg.text()); });
+  // The location URL is kept, not just the text. Chromium's console text for a
+  // failed subresource is bare — "Failed to load resource: the server responded
+  // with a status of 404 (Not Found)" — with the URL only in location(). The
+  // benign-404 filter at the bottom of this file matches on 'favicon', so
+  // against text alone it never matched and the harness exited 1 on every
+  // single run. A check that is always red reports exactly as much as one that
+  // is always green.
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return;
+    const url = msg.location()?.url ?? '';
+    findings.consoleErrors.push(url ? `${msg.text()} [${url}]` : msg.text());
+  });
   page.on('pageerror', (err) => findings.pageErrors.push(String(err)));
   page.on('dialog', async (d) => { findings.dialogs.push(`${d.type()}: ${d.message()}`); await d.accept(); });
 
@@ -132,6 +143,14 @@ async function main() {
   if (onWorkView) {
     clickableCount = await page.locator('.view-work button:visible, .view-work input:visible, .view-work textarea:visible').count();
     if (clickableCount === 0) findings.deadEnds.push('work view has zero visible/interactive elements after the horde ran');
+  } else {
+    // The clicker species is scoped to the work view and none of the other
+    // species can navigate, so ending anywhere else means that scoping broke —
+    // and it silently disables the dead-end check above, which is the whole
+    // point of the run. Previously this branch did not exist: the harness
+    // simply reported "clickable elements remaining: 0" and exited 0, i.e. it
+    // could report success having checked nothing.
+    findings.deadEnds.push(`horde ended outside the work view (shell class: ${shellClass}) — the dead-end check did not run`);
   }
 
   const stored = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('mati-v2') ?? 'null'); } catch { return 'UNPARSEABLE'; } });
@@ -164,9 +183,14 @@ async function main() {
   // browser requests it automatically) — filtered here so it doesn't drown
   // out or cry wolf about a real console error on every run.
   const isKnownBenign = (e) => e.toLowerCase().includes('favicon');
+  // storedIsParseable was computed, printed and written to the report, and then
+  // left out of this expression — so a horde that corrupted localStorage into
+  // unparseable JSON was reported on screen and still exited 0. A check whose
+  // result nothing acts on is not a check.
   const hasRealFinding = findings.pageErrors.length || findings.deadEnds.length
     || findings.consoleErrors.some((e) => !isKnownBenign(e))
-    || findings.gremlinsError.length || findings.gremlinsWarn.length;
+    || findings.gremlinsError.length || findings.gremlinsWarn.length
+    || stored === 'UNPARSEABLE';
   process.exit(hasRealFinding ? 1 : 0);
 }
 

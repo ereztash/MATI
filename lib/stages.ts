@@ -126,7 +126,7 @@ export function stageWindowLabel(stage: Stage): string {
 }
 
 /** A gap is at most two months; past this the stored answer is about a different one. */
-const GAP_ANSWER_MAX_AGE_DAYS = 90;
+export const GAP_ANSWER_MAX_AGE_DAYS = 90;
 
 export type StageResolution = { stage: Stage | null; source: 'manual' | 'calendar' | 'gap-answer' };
 

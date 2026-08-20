@@ -27,6 +27,8 @@ jobs:
         run: npm run check:design
       - name: Structural UX semantic contract
         run: npm run check:semantic-ux
+      - name: Readiness / DoD honesty
+        run: npm run check:readiness
       - name: Unit tests
         run: npm test
       - name: Production build

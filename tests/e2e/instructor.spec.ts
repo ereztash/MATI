@@ -49,6 +49,17 @@ test('the context ribbon reacts to a closed-choice answer, not only to typing', 
 
   // The ribbon may be absent or showing something else; either way it must not
   // report the gap yet, because only one of the two facts is in.
+  //
+  // The wait is the assertion. The context engine is driven by a 180ms debounce
+  // (app/context-layer.tsx), and a bare toHaveCount(0) here is satisfied on its
+  // first poll — measured, the ribbon is still displaying its PRE-fill sentence
+  // for ~200ms after fill() returns, so the check was reading the state from
+  // before the input it had just made and would have passed against an
+  // implementation that reports the gap on one fact. Waiting past the debounce
+  // and then asserting the ribbon has actually reacted (its previous headline
+  // is gone) is what makes the absence below mean anything.
+  await page.waitForTimeout(500);
+  await expect(page.locator('.contextRibbonMain strong')).toHaveCount(0);
   await expect(page.locator('.contextRibbonMain strong', { hasText: 'פער ששווה לעצור' })).toHaveCount(0);
 
   // Fact two: reached through the stepper the way an instructor would, so the

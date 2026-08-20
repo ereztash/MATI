@@ -284,3 +284,45 @@ The delete-then-keystroke test fails on the un-fixed build for the right reason 
 Both `axe` scans navigate to the work view first, so the home screen had never been scanned — and the gap picker exists nowhere else. It is also the one place in the app that puts `aria-disabled` on a button that stays clickable on purpose, which is the shape those rules exist to catch. Scanned in both a gap month and a real one: **no violations in either.** The scan was added anyway, so the surface stays covered rather than being clean by luck.
 
 **Suite after this pass: 113 unit tests, 25 e2e tests, all four checks, readiness unchanged at 6/8.**
+
+## Auditing the suite itself by mutation, 2026-08-20
+
+Having found one regression test that could not fail, the obvious next question was how many others there were. Asked properly: mutate the source, re-run the suite, and see what stays green. 363 single-operator mutants across all eleven `lib/` modules (comparison operators flipped, `&&`/`||` swapped, boolean returns inverted), each applied alone with the full unit suite run against it.
+
+**239 killed, 124 survived.** A survivor is a line whose behaviour no test constrains. After the work below: **275 killed, 88 survived.**
+
+### The worst of it: six of nine organizational concern directions were unconstrained
+
+`signalConcern` decides whether a measure reads as a concern. It is what `adverseShare` counts, which is what `majority_adverse` and the systemic classification are built on — so an inverted direction does not crash anything, it quietly tells the organization that a struggling cohort is fine.
+
+Its test was called *"concern is only assigned where the instrument has a direction"*, which reads as coverage of the instrument. It named four keys out of nine. Inverting the direction of `meeting_execution`, `implementation_depth`, `student_impact`, `resource_allocation`, `teacher_independence` and `sustainability` **all at once** left all 113 unit tests green — and `check:signals` passed too, since it only greps for forbidden field names.
+
+Now table-driven over every directional key in both directions, with the value vocabularies taken from the `Formative` unions in `lib/stages.ts`, so a new answer option added without a decision about its direction shows up as a missing case rather than defaulting to "no concern". Survivors in that module: 18 → 3, and all three remaining are provably equivalent mutants (two sit behind the `contributors < minCohort` guard where `>= 2` can never be false; the third is unreachable because the line above it returns first).
+
+### A test named "cover the whole clock" that tested only midpoints
+
+`daypartFromHour` was checked at 6, 10, 13, 16, 20, 23 and 2 — one hour from the middle of each band, which is every hour at which the function cannot be wrong. All ten of its comparisons could be shifted by one with the suite green. It now asserts all 24 hours.
+
+### `resolveStage` had no unit test at all
+
+The function introduced last pass to replace four drifted copies of `manualStage ?? stageFromDate() ?? 1` was covered only indirectly, through two e2e specs about the gap picker. Its whole job is precedence and expiry and neither was pinned — including `GAP_ANSWER_MAX_AGE_DAYS`, the 90-day expiry this document describes as a fix. Now tested for precedence, for `null` during a gap, for the expiry boundary on both sides, and for a `chosenAt` that is in the future or unreadable.
+
+Writing that test surfaced a trap worth recording: the obvious construction ages `now` forward from the answer, but no gap is 90 days long, so day 90 lands in the December–February window and the calendar answers instead — the boundary case "passed" on a stage the gap answer had not supplied. It holds `now` inside a gap and moves the answer backwards, and asserts `source` as well as the number.
+
+### Advice tested by the shape of its container
+
+*"recommendedActions returns at most three distinct suggestions"* asserted the count and the distinctness and nothing about the contents, so every dispatch condition could be inverted — advice attached to the wrong answer, invisible to a count. `rubricForNextYear`, which names the repeated mistakes in a summary she is asked to sign off, had no test of any kind. Both now check content, in both directions, one condition at a time so the three-item cap cannot hide a case.
+
+### Two harnesses that could not report what they found
+
+`tests/chaos/wizard-gremlins.mjs` computed whether the horde had left `localStorage` unparseable, printed it, wrote it to the report — and left it out of the expression that decides the exit code. It also skipped its dead-end check entirely if the horde ended outside the work view, reporting "0 clickable elements" and exiting 0. Both fixed; ending outside the work view is now itself a finding, since the clicker is scoped so that it should not happen.
+
+The same harness **failed on every run**, which is why the above went unnoticed. Its benign-404 filter matches on `favicon`, but Chromium's console text for a failed subresource is bare — the URL lives in `location()`, not `text()` — so the filter never matched and `/favicon.ico` failed every run. A check that is always red carries exactly as much information as one that is always green. The URL is now recorded with the message, and a clean run exits 0.
+
+`scripts/check-readiness.mjs` swallowed missing files and returned `''`. Since it only fails when the DoD claims more than the code delivers, a renamed file would turn every probe that reads it to "not met" and still pass — a silent downgrade. It now exits non-zero and names the file. It was also the one contract check absent from CI; it is in the workflow now.
+
+### What is deliberately still open
+
+24 survivors remain in `lib/stages.ts` and 24 in `lib/context-engine.ts`, concentrated in the heuristic scoring — `scoreDimensions`' per-dimension norms, `analyzeInteraction`'s pace and tone thresholds, the five "lowest dimension" dispatch lines, and the context engine's contradiction rules and intensity/density decision. Pinning those means first deciding what the scoring model is *supposed* to do at its boundaries, which is a professional-content decision rather than a testing one, and a larger piece of work than this pass. They are listed here rather than left implicit.
+
+**Suite after this pass: 122 unit tests, 25 e2e tests, all four checks (now four in CI), readiness unchanged at 6/8.**

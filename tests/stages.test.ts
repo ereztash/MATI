@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  analyzeInteraction, canOpenStage, deleteStakes, emptyState, formativeCompletion, formativeStarted, hasLargeGoalResultGap,
-  implementationStatus, MatiState, planReady, planSaved, ratioPercent, recommendedActions, scoreDimensions,
-  selfEffectivenessAverage, smartGoalLooksValid, stage2SectionStarted, stageFromDate, summarizeLongText,
+  analyzeInteraction, canOpenStage, deleteStakes, emptyState, formativeCompletion, formativeStarted,
+  GAP_ANSWER_MAX_AGE_DAYS, hasLargeGoalResultGap,
+  implementationStatus, MatiState, planReady, planSaved, ratioPercent, recommendedActions, resolveStage, scoreDimensions,
+  rubricForNextYear, selfEffectivenessAverage, smartGoalLooksValid, stage2SectionStarted, stageFromDate,
+  stageWindowLabel, summarizeLongText,
 } from '../lib/stages';
 import { migrateState } from '../lib/state-storage';
 
@@ -16,6 +18,68 @@ test('stageFromDate maps only the three gantt windows and guesses nothing betwee
   assert.deepEqual([12, 1, 2].map(stageOf), [2, 2, 2]);
   assert.deepEqual([5, 6].map(stageOf), [3, 3]);
   assert.deepEqual([3, 4, 10, 11].map(stageOf), [null, null, null, null]);
+});
+
+/**
+ * resolveStage decides which stage every surface in the app shows, and until
+ * now it had no unit test at all — it was introduced to replace four drifted
+ * copies of `manualStage ?? stageFromDate() ?? 1` and was covered only
+ * indirectly, through two e2e specs that exercise the gap picker. Its whole
+ * job is precedence and expiry, and neither was pinned anywhere.
+ */
+const IN_GAP = new Date(2026, 9, 15);      // October — no window
+const IN_WINDOW_1 = new Date(2026, 7, 15); // August — stage 1
+
+test('resolveStage prefers a manual override, then the calendar, then her gap answer', () => {
+  const gapAnswer = { stage: 2 as const, chosenAt: IN_GAP.toISOString() };
+
+  assert.deepEqual(resolveStage(state({ manualStage: 3, gapStage: gapAnswer }), IN_WINDOW_1),
+    { stage: 3, source: 'manual' }, 'a deliberate override outranks everything');
+
+  // The calendar outranks her gap answer on purpose: once a real window opens,
+  // the answer she gave about a gap is no longer about now.
+  assert.deepEqual(resolveStage(state({ gapStage: gapAnswer }), IN_WINDOW_1),
+    { stage: 1, source: 'calendar' });
+
+  assert.deepEqual(resolveStage(state({ gapStage: gapAnswer }), IN_GAP),
+    { stage: 2, source: 'gap-answer' });
+});
+
+test('resolveStage returns null rather than guessing a stage during a gap', () => {
+  // `null` is the whole point of this function: callers ask instead of assuming
+  // stage 1, which is what the four copies it replaced all did.
+  assert.deepEqual(resolveStage(emptyState, IN_GAP), { stage: null, source: 'calendar' });
+});
+
+test('a gap answer expires, and the boundary day still counts', () => {
+  // `now` is held inside a gap month and the ANSWER is moved backwards, rather
+  // than the reverse: no gap is 90 days long, so ageing `now` forward out of
+  // October walks straight into the December–February window and the calendar
+  // answers instead. A first draft of this test did exactly that and "passed"
+  // at the boundary on a stage the gap answer had not supplied — which is why
+  // `source` is asserted here too, not just the number.
+  const now = new Date(Date.UTC(2026, 10, 15, 12));  // November — a gap
+  const answeredDaysAgo = (days: number) => resolveStage(
+    state({ gapStage: { stage: 2, chosenAt: new Date(now.getTime() - days * 86_400_000).toISOString() } }),
+    now,
+  );
+
+  assert.deepEqual(answeredDaysAgo(0), { stage: 2, source: 'gap-answer' }, 'answered today');
+  assert.deepEqual(answeredDaysAgo(GAP_ANSWER_MAX_AGE_DAYS), { stage: 2, source: 'gap-answer' },
+    'the last day it still describes now');
+  assert.equal(answeredDaysAgo(GAP_ANSWER_MAX_AGE_DAYS + 1).stage, null,
+    'one day past, it is about a different gap');
+});
+
+test('a gap answer from the future, or an unreadable one, is discarded rather than trusted', () => {
+  // Both are reachable without anything exotic: a device whose clock was wrong
+  // when she answered and has since been corrected, and a hand-edited or
+  // partially-written localStorage value.
+  const fromTheFuture = state({ gapStage: { stage: 3, chosenAt: new Date(2026, 10, 15).toISOString() } });
+  assert.equal(resolveStage(fromTheFuture, IN_GAP).stage, null);
+
+  const unreadable = state({ gapStage: { stage: 3, chosenAt: 'לא תאריך' } });
+  assert.equal(resolveStage(unreadable, IN_GAP).stage, null);
 });
 
 test('the goal field is checked for content only', () => {
@@ -117,6 +181,63 @@ test('recommendedActions returns at most three distinct suggestions', () => {
   }));
   assert.ok(actions.length > 0 && actions.length <= 3);
   assert.equal(new Set(actions).size, actions.length);
+});
+
+test('the advice she is given is the advice her own answers earned', () => {
+  // The test above pins the shape — at most three, all distinct — and nothing
+  // about the contents, so every one of these dispatch conditions could be
+  // inverted with the suite still green (verified by mutation, 2026-08-20).
+  // This is guidance a מדריכה is asked to act on: advice attached to the wrong
+  // answer is worse than no advice, and it is invisible to a count.
+  const answers = (a: Record<string, unknown>) => state({ formative: { answers: a } });
+
+  const noFeedback = recommendedActions(answers({ q6: { teamFeedbackAsked: 'no' } }));
+  assert.ok(noFeedback.some((line) => line.startsWith('אספי מהצוות שאלה אחת קבועה')),
+    'never having asked the team for feedback must produce the feedback action');
+  assert.ok(!recommendedActions(answers({ q6: { teamFeedbackAsked: 'yes' } }))
+    .some((line) => line.startsWith('אספי מהצוות שאלה אחת קבועה')),
+    'and must not, once she has asked');
+
+  const dependent = recommendedActions(answers({ q7: { continuesWithoutDependency: 'no' } }));
+  assert.ok(dependent.some((line) => line.startsWith('העבירי בעלות על כלי אחד')),
+    'an implementation that stops without her must produce the ownership action');
+  assert.ok(!recommendedActions(answers({ q7: { continuesWithoutDependency: 'yes' } }))
+    .some((line) => line.startsWith('העבירי בעלות על כלי אחד')));
+});
+
+test('the repeated-mistake rubric names the mistake the answers actually show', () => {
+  // rubricForNextYear had no test of any kind. Each row below is a direct
+  // answer-to-sentence mapping, checked on its own so the three-item cap
+  // cannot hide one, and checked in both directions so an inverted condition
+  // fails here instead of appearing in a summary she is asked to sign off.
+  const rubricFor = (a: Record<string, unknown>) => rubricForNextYear(state({ formative: { answers: a } })).mistakes;
+
+  const cases: Array<[Record<string, unknown>, Record<string, unknown>, string]> = [
+    [{ q1: { measuresDefined: 'no' } }, { q1: { measuresDefined: 'all' } }, 'יעדים בלי מדדי הצלחה ברורים'],
+    [{ q3: { meetingRate: 'under70' } }, { q3: { meetingRate: '90-100' } }, 'פער גבוה בין לוח הזמנים לתדירות המפגשים בפועל'],
+    [{ q6: { managerCommitment: 'low' } }, { q6: { managerCommitment: 'high' } }, 'תלות בתהליך בלי מחויבות מנהלים מספקת'],
+    [{ q6: { managerCommitment: 'resistance' } }, { q6: { managerCommitment: 'medium' } }, 'תלות בתהליך בלי מחויבות מנהלים מספקת'],
+    [{ q7: { continuesWithoutDependency: 'no' } }, { q7: { continuesWithoutDependency: 'yes' } }, 'יישום שנשאר תלוי במדריכה'],
+  ];
+  for (const [triggering, benign, sentence] of cases) {
+    assert.ok(rubricFor(triggering).includes(sentence), `${JSON.stringify(triggering)} must name "${sentence}"`);
+    assert.ok(!rubricFor(benign).includes(sentence), `${JSON.stringify(benign)} must NOT name "${sentence}"`);
+  }
+
+  // Her own answer is quoted back, not paraphrased or dropped.
+  assert.ok(rubricFor({ q8: { centralMistake: 'התחלתי בלי מדדים' } })
+    .includes('הלמידה שהמדריכה עצמה סימנה: התחלתי בלי מדדים'));
+
+  // And silence is stated rather than implied by an empty list.
+  assert.deepEqual(rubricFor({}), ['לא זוהתה עדיין טעות חוזרת מתוך הנתונים שנאספו.']);
+});
+
+test('each stage window is labelled with its own months', () => {
+  // stageWindowLabel finds the window whose stage matches; flipping that match
+  // returns the FIRST window that does not, so every stage in the gap picker
+  // gets a neighbour's months and still renders plausibly. These strings exist
+  // precisely so the picker stops restating the gantt as free text.
+  assert.deepEqual(([1, 2, 3] as const).map(stageWindowLabel), ['יולי–ספטמבר', 'דצמבר–פברואר', 'מאי–יוני']);
 });
 
 test('summarizeLongText only summarises text long enough to need it', () => {

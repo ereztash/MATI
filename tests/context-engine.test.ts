@@ -13,8 +13,24 @@ function usageAt(now: Date, overrides: Partial<UsageContext> = {}): UsageContext
 }
 
 test('daypart and greeting cover the whole clock', () => {
-  assert.deepEqual([6, 10, 13, 16, 20, 23, 2].map(daypartFromHour),
-    ['early', 'morning', 'midday', 'afternoon', 'evening', 'late', 'late']);
+  // Every hour, not seven samples. The previous version tested one hour from
+  // the middle of each band — which is every hour at which the function cannot
+  // be wrong — so all ten of its comparisons could be shifted by one and the
+  // suite stayed green (verified by mutation, 2026-08-20). A band's edges are
+  // the only place a daypart rule has ever been wrong, and the greeting shown
+  // at 08:59 versus 09:00 is the whole visible behaviour of this function.
+  assert.deepEqual(
+    Array.from({ length: 24 }, (_, hour) => daypartFromHour(hour)),
+    [
+      'late', 'late', 'late', 'late', 'late',                  // 00-04
+      'early', 'early', 'early', 'early',                      // 05-08
+      'morning', 'morning', 'morning',                         // 09-11
+      'midday', 'midday', 'midday',                            // 12-14
+      'afternoon', 'afternoon', 'afternoon',                   // 15-17
+      'evening', 'evening', 'evening', 'evening',              // 18-21
+      'late', 'late',                                          // 22-23
+    ],
+  );
   assert.equal(greetingForDaypart('morning'), 'בוקר טוב');
   assert.equal(greetingForDaypart('afternoon'), 'צהריים טובים');
   assert.equal(greetingForDaypart('evening'), 'ערב טוב');

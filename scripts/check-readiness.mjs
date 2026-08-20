@@ -14,8 +14,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
+/**
+ * Every path read below is a file this check needs. Returning '' for a missing
+ * one turned a rename into a silent downgrade: each probe that reads it goes
+ * false, the criterion reports "not met", and since this script only fails when
+ * the DoD *claims* more than the code delivers, the run still passes — with a
+ * quietly lower score and no indication that a file simply was not there.
+ */
 const read = (...p) => {
-  try { return fs.readFileSync(path.join(root, ...p), 'utf8'); } catch { return ''; }
+  const full = path.join(root, ...p);
+  try { return fs.readFileSync(full, 'utf8'); } catch (error) {
+    console.error(`Readiness check: cannot read ${path.join(...p)} — every probe that reads it would silently report "not met".`);
+    console.error(String(error.message ?? error));
+    process.exit(1);
+  }
 };
 
 const dod = read('docs', 'MARKET_READINESS.md');
