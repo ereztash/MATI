@@ -203,7 +203,40 @@ export function selfEffectivenessAverage(state: MatiState) {
 }
 
 function rangeScore(value: string, map: Record<string, number>) { return value && map[value] !== undefined ? map[value] : null; }
-function averagePresent(values: Array<number | null | undefined>) { const present = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)); if (!present.length) return 0; return present.reduce((sum, v) => sum + v, 0) / present.length; }
+/**
+ * The share of a dimension's evidence that is actually present and positive.
+ *
+ * The denominator is FIXED: every input the instrument asks about counts,
+ * answered or not, and an unanswered one contributes zero. That replaces
+ * averaging only the subset she happened to answer — a quantity that goes DOWN
+ * when you add information, with two consequences that were both wrong in the
+ * same direction:
+ *
+ *  - **Answering honestly and low scored worse than saying nothing.** Reporting
+ *    0% implementation cost a star, while leaving the field blank cost nothing,
+ *    because a blank was excluded from the mean and a zero was averaged into
+ *    it. The same held for "לא ביקשתי משוב מהצוות" and for meeting none of the
+ *    planned manager sessions. A mirror that rewards silence teaches silence,
+ *    and honest answers are the input to everything else here (R5).
+ *  - **Two good answers out of five scored a full 5/5.** Partial data read as a
+ *    complete picture — the flattery this pilot's own failure criterion names.
+ *
+ * The old array also treated "unanswered" two opposite ways inside one average:
+ * `plan.metric1 ? 1 : 0` scored a missing field as zero, while
+ * `impl !== null ? … : null` excluded it. Both mean "she has not filled this
+ * in". Now both count the same.
+ *
+ * The property this guarantees, asserted exhaustively in tests/stages.test.ts:
+ * answering a question can never lower a dimension's score.
+ *
+ * `null`/`undefined` are still accepted so the call sites read naturally —
+ * `rangeScore` returns null for an unanswered option — and count as zero.
+ */
+function evidenceNorm(values: Array<number | null | undefined>) {
+  if (!values.length) return 0;
+  const total = values.reduce<number>((sum, v) => sum + (typeof v === 'number' && Number.isFinite(v) ? v : 0), 0);
+  return total / values.length;
+}
 function toStars(normalized: number) { return Math.max(2, Math.min(5, Math.round(2 + normalized * 3))); }
 
 export type Dimension = { name: string; score: number; note: string; evidence: string[]; };
@@ -216,19 +249,19 @@ export function scoreDimensions(state: MatiState): Dimension[] {
   const impl = num(a.q1.implementationPercent);
 
   const reflectionEvidence = [state.plan.flexibility && 'הוגדרה מראש נקודת גמישות', a.q5.adaptations && a.q5.adaptations !== '0' && 'בוצעו התאמות בעקבות צורך או משוב', a.q8.centralMistake && 'נוסחה טעות מרכזית ולמידה ממנה', a.q8.flexibilityReflection && 'קיימת רפלקציה על גמישות וקשיחות'].filter(Boolean) as string[];
-  const reflectionNorm = averagePresent([state.plan.flexibility ? 1 : 0, a.q5.adaptations ? (a.q5.adaptations === '0' ? 0.2 : 0.8) : null, a.q8.centralMistake ? 1 : null, a.q8.flexibilityReflection ? 1 : null]);
+  const reflectionNorm = evidenceNorm([state.plan.flexibility ? 1 : 0, a.q5.adaptations ? (a.q5.adaptations === '0' ? 0.2 : 0.8) : null, a.q8.centralMistake ? 1 : null, a.q8.flexibilityReflection ? 1 : null]);
 
   const quantitativeEvidence = [state.plan.metric1 && 'הוגדר מדד הצלחה ראשון', state.plan.metric2 && 'הוגדר מדד הצלחה שני', impl !== null && `דווח אחוז מימוש: ${impl}%`, studentPct !== null && `שיפור תלמידים מחושב: ${studentPct}%`, selfEffectivenessAverage(state) !== null && 'קיים דירוג אפקטיביות עצמי מספרי'].filter(Boolean) as string[];
-  const quantitativeNorm = averagePresent([state.plan.metric1 ? 1 : 0, state.plan.metric2 ? 1 : 0, impl !== null ? Math.min(1, impl / 100) : null, studentPct !== null ? Math.min(1, studentPct / 100) : null, selfEffectivenessAverage(state) !== null ? Math.min(1, (selfEffectivenessAverage(state) ?? 0) / 10) : null]);
+  const quantitativeNorm = evidenceNorm([state.plan.metric1 ? 1 : 0, state.plan.metric2 ? 1 : 0, impl !== null ? Math.min(1, impl / 100) : null, studentPct !== null ? Math.min(1, studentPct / 100) : null, selfEffectivenessAverage(state) !== null ? Math.min(1, (selfEffectivenessAverage(state) ?? 0) / 10) : null]);
 
   const implementationEvidence = [state.plan.timeframe && 'הוגדרה מסגרת זמן', a.q3.meetingRate && 'נמדדה תדירות המפגשים', fieldPct !== null && `מימוש שעות שטח: ${fieldPct}%`, a.q3.depth && 'תועד עומק היישום בשטח'].filter(Boolean) as string[];
-  const implementationNorm = averagePresent([state.plan.timeframe ? 1 : 0, rangeScore(a.q3.meetingRate, { under70: .35, '70-90': .75, '90-100': .95 }), fieldPct !== null ? Math.min(1, fieldPct / 100) : null, rangeScore(a.q3.depth, { partial: .4, shallow: .45, consistent: 1 })]);
+  const implementationNorm = evidenceNorm([state.plan.timeframe ? 1 : 0, rangeScore(a.q3.meetingRate, { under70: .35, '70-90': .75, '90-100': .95 }), fieldPct !== null ? Math.min(1, fieldPct / 100) : null, rangeScore(a.q3.depth, { partial: .4, shallow: .45, consistent: 1 })]);
 
   const systemEvidence = [state.plan.managers && 'הוגדרה מעורבות מנהלים נדרשת', a.q6.teamFeedbackAsked === 'yes' && 'נאסף משוב שיטתי מהצוות', managerPct !== null && `מימוש פגישות מנהלים: ${managerPct}%`, a.q6.resourcesAllocated && 'תועד מצב הקצאת המשאבים', a.q6.culturePositiveSign && 'תועד סימן לשינוי בתרבות הארגונית'].filter(Boolean) as string[];
-  const systemNorm = averagePresent([state.plan.managers ? 1 : 0, a.q6.teamFeedbackAsked ? (a.q6.teamFeedbackAsked === 'yes' ? 1 : .2) : null, managerPct !== null ? Math.min(1, managerPct / 100) : null, rangeScore(a.q6.resourcesAllocated, { no: .2, partial: .6, yes: 1 }), a.q6.culturePositiveSign ? 1 : null]);
+  const systemNorm = evidenceNorm([state.plan.managers ? 1 : 0, a.q6.teamFeedbackAsked ? (a.q6.teamFeedbackAsked === 'yes' ? 1 : .2) : null, managerPct !== null ? Math.min(1, managerPct / 100) : null, rangeScore(a.q6.resourcesAllocated, { no: .2, partial: .6, yes: 1 }), a.q6.culturePositiveSign ? 1 : null]);
 
   const independenceEvidence = [state.plan.independence && 'הוגדרה מראש עצמאות רצויה', a.q2.frequency === 'independent' && 'המודרך מיישם באופן עצמאי ועקבי', a.q7.independence && 'נמדדה עצמאות בסיום התהליך', a.q7.continuesWithoutDependency && 'נבדקה המשכיות ללא תלות גבוהה במדריכה'].filter(Boolean) as string[];
-  const independenceNorm = averagePresent([state.plan.independence ? 1 : 0, rangeScore(a.q2.frequency, { rarely: .2, sometimes: .45, regular: .75, independent: 1 }), rangeScore(a.q7.independence, { none: .1, partial: .45, most: .8, all: 1 }), rangeScore(a.q7.continuesWithoutDependency, { no: .15, partial: .55, yes: 1 })]);
+  const independenceNorm = evidenceNorm([state.plan.independence ? 1 : 0, rangeScore(a.q2.frequency, { rarely: .2, sometimes: .45, regular: .75, independent: 1 }), rangeScore(a.q7.independence, { none: .1, partial: .45, most: .8, all: 1 }), rangeScore(a.q7.continuesWithoutDependency, { no: .15, partial: .55, yes: 1 })]);
 
   return [
     { name: 'רפלקציה ולמידה', score: toStars(reflectionNorm), note: 'בקרה עצמית, גמישות ושינוי בעקבות תובנות', evidence: reflectionEvidence },

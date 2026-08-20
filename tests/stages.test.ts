@@ -368,11 +368,16 @@ test('a graded answer is graded, not just present', () => {
   const independenceAt = (value: string) =>
     scoreOf(state({ formative: { answers: { q7: { independence: value } } } }), 'אופרטיביות ועצמאות');
 
-  assert.equal(independenceAt('none'), 2);
-  assert.equal(independenceAt('partial'), 3);
-  assert.equal(independenceAt('all'), 4);
   const ladder = ['none', 'partial', 'most', 'all'].map(independenceAt);
   assert.deepEqual([...ladder].sort((a, b) => a - b), ladder, 'the scale must never score a weaker answer higher');
+  assert.ok(independenceAt('all') > independenceAt('none'), 'and the two ends must not read the same');
+
+  // Adjacent options do not always separate on a four-level star display: one
+  // answer is a quarter of this dimension's evidence, so the underlying norm
+  // moves further than the rounding shows. That is the honest direction to err
+  // in — a single answer should not swing a whole dimension — but it means the
+  // ladder is asserted as an ordering rather than as four distinct numbers.
+  assert.equal(independenceAt('none'), independenceAt(''), 'the weakest answer is level with silence, never below it');
 });
 
 test('"no adaptations at all" is an answer, and it does not count as evidence of adapting', () => {
@@ -490,39 +495,109 @@ test('tone softens at two difficult answers and overload starts at three', () =>
   assert.equal(profileOf(['כן', 'לא']).minimalism, true);
 });
 
-test('a reported ratio moves its dimension on its own — and a low answer costs more than no answer', () => {
-  // These four inputs are the only ones that enter the score as a measured
-  // ratio rather than a presence flag, and each was unconstrained: the
-  // isolation test above fills every input to its maximum, where dropping one
-  // changes no star. Varying one at a time is what reaches them.
-  //
-  // It also documents a real property of the model, which is not obviously the
-  // intended one: reporting 0% implementation scores LOWER (4) than leaving the
-  // field blank (5), because a blank is skipped by averagePresent while a zero
-  // is averaged in. The same holds for "לא ביקשתי משוב מהצוות" and for meeting
-  // none of the planned manager sessions. A mirror that rewards silence over an
-  // honest low number is worth a decision; until that decision is taken, this
-  // is where the current behaviour is written down.
-  const quantitative = (implementationPercent: string) => scoreDimensions(
+test('answering never costs her a star, and answering well earns one', () => {
+  // This is the fix for the property the previous version of this test recorded:
+  // reporting 0% implementation used to score a star LOWER than leaving the
+  // field blank, because a blank was excluded from the average while a zero was
+  // averaged into it. The denominator is fixed now (see evidenceNorm), so an
+  // unanswered input and the worst possible answer both contribute nothing, and
+  // a good answer can only add.
+  const quantitative = (implementationPercent: string) => scoreOf(
     state({ plan: { metric1: 'מדד א', metric2: 'מדד ב' }, formative: { answers: { q1: { implementationPercent } } } }),
-  ).find((d) => d.name === 'מדדים כמותיים')!.score;
-  assert.equal(quantitative(''), 5, 'unanswered is skipped');
-  assert.equal(quantitative('0'), 4, 'answered zero is averaged in, and costs a star');
-  assert.equal(quantitative('100'), 5);
+    'מדדים כמותיים');
+  assert.equal(quantitative('0'), quantitative(''), 'an honest zero costs nothing against silence');
+  assert.ok(quantitative('100') > quantitative('0'), 'and a full result earns a star');
 
-  const timetable = (actualHours: string) => scoreDimensions(
+  const timetable = (actualHours: string) => scoreOf(
     state({ plan: { timeframe: 'ספטמבר–ינואר' }, formative: { answers: { q5: { plannedHours: '10', actualHours } } } }),
-  ).find((d) => d.name === 'לוח זמנים ויישום')!.score;
-  assert.equal(timetable(''), 5, 'no hours reported at all');
-  assert.equal(timetable('0'), 4, 'none of the planned field hours happened');
-  assert.equal(timetable('10'), 5);
+    'לוח זמנים ויישום');
+  assert.equal(timetable('0'), timetable(''), 'none of the planned field hours is still not worse than not saying');
+  assert.ok(timetable('10') > timetable('0'));
 
-  const system = (q6: Record<string, string>) => scoreDimensions(
-    state({ plan: { managers: 'מנהלת בית הספר' }, formative: { answers: { q6 } } }),
-  ).find((d) => d.name === 'מערכת ואחריות')!.score;
-  assert.equal(system({}), 5, 'nothing asked about the system yet');
-  assert.equal(system({ teamFeedbackAsked: 'no' }), 4, '"I did not ask the team" is scored, not ignored');
-  assert.equal(system({ teamFeedbackAsked: 'yes' }), 5);
-  assert.equal(system({ managerPlanned: '4', managerActual: '0' }), 4, 'none of the planned manager meetings happened');
-  assert.equal(system({ managerPlanned: '4', managerActual: '4' }), 5);
+  const system = (q6: Record<string, string>) => scoreOf(
+    state({ plan: { managers: 'מנהלת בית הספר' }, formative: { answers: { q6 } } }), 'מערכת ואחריות');
+  assert.equal(system({ teamFeedbackAsked: 'no' }), system({}), '"I did not ask the team" costs nothing against silence');
+  assert.equal(system({ managerPlanned: '4', managerActual: '0' }), system({}));
+  assert.ok(system({ teamFeedbackAsked: 'yes', managerPlanned: '4', managerActual: '4', resourcesAllocated: 'yes' }) > system({}));
+
+  // Asking the team and not asking them must not read the same, and must not
+  // read backwards. With only the managers field beside it the two round to the
+  // same star, so this is asserted where the difference actually separates —
+  // one extra piece of evidence in the dimension, which is the ordinary case.
+  const withCultureSign = (teamFeedbackAsked: string) => system({ culturePositiveSign: 'סימן', ...(teamFeedbackAsked ? { teamFeedbackAsked } : {}) });
+  assert.ok(withCultureSign('yes') > withCultureSign('no'), 'having asked the team is worth more than not having asked');
+  assert.equal(withCultureSign('no'), withCultureSign(''), 'and saying "no" is still level with silence');
+});
+
+/**
+ * Every input that feeds a dimension, with the vocabulary the UI actually
+ * offers for it. Used to assert the property above exhaustively rather than at
+ * the four places it happened to be noticed.
+ */
+const SCORED_INPUTS: Array<{ dimension: string; values: string[]; answer: (value: string) => Record<string, unknown> }> = [
+  { dimension: 'רפלקציה ולמידה', values: ['נקודת גמישות'], answer: (v) => ({ plan: { flexibility: v } }) },
+  { dimension: 'רפלקציה ולמידה', values: ['0', '1-2', '3-4', 'over4'], answer: (v) => ({ formative: { answers: { q5: { adaptations: v } } } }) },
+  { dimension: 'רפלקציה ולמידה', values: ['טעות'], answer: (v) => ({ formative: { answers: { q8: { centralMistake: v } } } }) },
+  { dimension: 'רפלקציה ולמידה', values: ['רפלקציה'], answer: (v) => ({ formative: { answers: { q8: { flexibilityReflection: v } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['מדד'], answer: (v) => ({ plan: { metric1: v } }) },
+  { dimension: 'מדדים כמותיים', values: ['מדד'], answer: (v) => ({ plan: { metric2: v } }) },
+  { dimension: 'מדדים כמותיים', values: ['0', '1', '50', '100'], answer: (v) => ({ formative: { answers: { q1: { implementationPercent: v } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['0', '5', '10'], answer: (v) => ({ formative: { answers: { q4: { targetStudents: '10', improvedStudents: v } } } }) },
+  { dimension: 'מדדים כמותיים', values: ['1', '5', '10'], answer: (v) => ({ formative: { answers: { q9: { goals: Number(v) } } } }) },
+  { dimension: 'לוח זמנים ויישום', values: ['ספטמבר–ינואר'], answer: (v) => ({ plan: { timeframe: v } }) },
+  { dimension: 'לוח זמנים ויישום', values: ['under70', '70-90', '90-100'], answer: (v) => ({ formative: { answers: { q3: { meetingRate: v } } } }) },
+  { dimension: 'לוח זמנים ויישום', values: ['0', '5', '10'], answer: (v) => ({ formative: { answers: { q5: { plannedHours: '10', actualHours: v } } } }) },
+  { dimension: 'לוח זמנים ויישום', values: ['partial', 'shallow', 'consistent'], answer: (v) => ({ formative: { answers: { q3: { depth: v } } } }) },
+  { dimension: 'מערכת ואחריות', values: ['מנהלת'], answer: (v) => ({ plan: { managers: v } }) },
+  { dimension: 'מערכת ואחריות', values: ['no', 'yes'], answer: (v) => ({ formative: { answers: { q6: { teamFeedbackAsked: v } } } }) },
+  { dimension: 'מערכת ואחריות', values: ['0', '2', '4'], answer: (v) => ({ formative: { answers: { q6: { managerPlanned: '4', managerActual: v } } } }) },
+  { dimension: 'מערכת ואחריות', values: ['no', 'partial', 'yes'], answer: (v) => ({ formative: { answers: { q6: { resourcesAllocated: v } } } }) },
+  { dimension: 'מערכת ואחריות', values: ['סימן'], answer: (v) => ({ formative: { answers: { q6: { culturePositiveSign: v } } } }) },
+  { dimension: 'אופרטיביות ועצמאות', values: ['ביצוע עצמאי'], answer: (v) => ({ plan: { independence: v } }) },
+  { dimension: 'אופרטיביות ועצמאות', values: ['rarely', 'sometimes', 'regular', 'independent'], answer: (v) => ({ formative: { answers: { q2: { frequency: v } } } }) },
+  { dimension: 'אופרטיביות ועצמאות', values: ['none', 'partial', 'most', 'all'], answer: (v) => ({ formative: { answers: { q7: { independence: v } } } }) },
+  { dimension: 'אופרטיביות ועצמאות', values: ['no', 'partial', 'yes'], answer: (v) => ({ formative: { answers: { q7: { continuesWithoutDependency: v } } } }) },
+];
+
+/** Deep-merges the partial answer objects above into one state fixture. */
+function mergeDeep(target: Record<string, unknown>, source: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(source)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      target[key] = mergeDeep((target[key] as Record<string, unknown>) ?? {}, value as Record<string, unknown>);
+    } else {
+      target[key] = value;
+    }
+  }
+  return target;
+}
+
+test('no answer she can give anywhere scores worse than not answering at all', () => {
+  // The general form of the property, over every input and every option the
+  // instrument offers, holding the rest of the dimension fixed.
+  //
+  // "Holding the rest fixed" is the whole test. A first version of it compared
+  // each answer against the EMPTY state and passed against the unfixed code —
+  // because with nothing else answered the average has nothing to be dragged
+  // down from. The penalty only ever appeared once the other inputs in the same
+  // dimension were already answered well, which is the ordinary case for
+  // someone filling the form in, and the only baseline that can show it.
+  //
+  // Worth asserting exhaustively rather than by example: the penalty was not
+  // written anywhere. It fell out of averaging only the answered subset, so it
+  // appeared wherever an input happened to be scored on a scale rather than on
+  // presence. A metric that goes down when you add information teaches the
+  // person reading it to add none.
+  const best = (input: typeof SCORED_INPUTS[number]) => input.answer(input.values[input.values.length - 1]);
+
+  SCORED_INPUTS.forEach((input, index) => {
+    const siblings = SCORED_INPUTS.filter((other, i) => i !== index && other.dimension === input.dimension);
+    const withoutThisAnswer = siblings.reduce<Record<string, unknown>>((acc, other) => mergeDeep(acc, best(other)), {});
+    const silent = scoreOf(state(withoutThisAnswer), input.dimension);
+
+    for (const value of input.values) {
+      const answered = scoreOf(state(mergeDeep(structuredClone(withoutThisAnswer), input.answer(value))), input.dimension);
+      assert.ok(answered >= silent,
+        `${input.dimension}: answering ${JSON.stringify(value)} scored ${answered} where staying silent scored ${silent}`);
+    }
+  });
 });

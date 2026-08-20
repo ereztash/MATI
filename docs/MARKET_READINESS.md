@@ -370,3 +370,44 @@ Writing the tests surfaced a property worth a decision rather than a test. In `s
 | `organizational-signals.ts` authority | The line above returns first for every other action, so the mutated condition holds for anything that reaches it. |
 
 **Suite after this pass: 161 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**
+
+## The mirror punished honesty — fixed 2026-08-20
+
+Found while writing the characterisation tests above, reported as a property worth a decision rather than a test, and then fixed on request.
+
+### What it did
+
+Reporting **0% implementation scored a star lower than leaving the field blank.** The same held for "לא ביקשתי משוב מהצוות" against saying nothing, and for meeting none of the planned manager sessions. On the dimension where it was sharpest: with the rest of רפלקציה ולמידה filled in, answering "לא ביצעתי התאמות" scored **4 where silence scored 5**.
+
+This is not a cosmetic scoring quirk. R5 — the promise that the reflection is not used to rate her — exists because honest answers are the input to everything else in the pilot. A mirror that visibly rewards blank fields teaches the one behaviour that makes the whole instrument worthless, and it teaches it silently, because nobody is told why the number moved.
+
+### Why it happened
+
+`averagePresent` averaged **only the inputs she had answered**. That quantity goes *down* when you add information: a dimension with two good answers out of five scored a full 5/5, and a third, honest, low answer pulled the mean down. Silence was rewarded twice — once by being excluded from the average, and once by keeping the denominator small.
+
+The same array also treated "unanswered" two opposite ways at once:
+
+```
+plan.metric1 ? 1 : 0            // a missing field scores ZERO
+impl !== null ? …/100 : null    // a missing field is EXCLUDED
+```
+
+Both mean "she has not filled this in". One penalised her, the other was invisible.
+
+### The fix
+
+One function. `evidenceNorm` scores each dimension over a **fixed denominator** — every input the instrument asks about, answered or not, with an unanswered one contributing zero. That resolves both halves: an unanswered input and the worst possible answer now contribute the same, so answering can never cost her anything, and partial data can no longer read as a complete picture.
+
+The guarantee is stated as a property and asserted exhaustively over every input and every option the UI offers, holding the rest of the dimension fixed:
+
+> No answer she can give anywhere scores worse than not answering at all.
+
+**The first version of that test passed against the unfixed code.** It compared each answer against the *empty* state — where nothing else is filled in, so the average has nothing to be dragged down from. The penalty only ever appeared once the other inputs in the same dimension were already answered, which is the ordinary case for someone working through the form and the only baseline that can show it. Same class of mistake as the inert scroll sweep two sections up: a test whose baseline excludes the condition it is testing for.
+
+### What this changes on screen, deliberately
+
+Scores drop where the data is thin. Two metrics defined and nothing else was 5/5 in מדדים כמותיים; it is now 3/5, and reaches 5 when the dimension's evidence is actually there. That is the intended direction — the manager's own definition of failure is a product that "עובד טכנית מצוין" while nothing behind it changed, and a mirror handing out full marks for a fifth of the evidence is that failure in miniature.
+
+The cost is granularity: one answer is now a quarter or a fifth of its dimension rather than the whole of the answered subset, so a single answer moves the four-level star display less. One consequence showed up immediately in the mutation sweep — the `teamFeedbackAsked === 'yes'` direction, previously pinned, became invisible because "asked" and "did not ask" now round to the same star beside a lone `managers` field. It is pinned again on a state where the difference actually separates, rather than left to the rounding.
+
+**Suite after this pass: 162 unit tests, 25 e2e tests, four contract checks in CI, chaos green, 94/97 mutants killed in `lib/stages.ts`, readiness unchanged at 6/8.**
