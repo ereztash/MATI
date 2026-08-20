@@ -335,7 +335,7 @@ button:not(:disabled):active { transform:translateY(1px); }
 .workExperience .summaryConfirm { background:#fafbf9!important;border-color:var(--soft-line)!important; }
 
 .workSessionBar {
-  top:72px;
+  top:80px;
   max-width:920px;
   border-color:var(--soft-line);
   border-radius:14px;
@@ -385,7 +385,7 @@ button:not(:disabled):active { transform:translateY(1px); }
   .homeHero { margin-bottom:24px; }
   .homeDecisionCard { padding:24px; }
   .homeStatusCard { min-height:auto; }
-  .workSessionBar { top:108px;width:calc(100% - 20px); }
+  .workSessionBar { top:132px;width:calc(100% - 20px); }
   .contextRibbon { width:calc(100% - 20px); }
   .workExperience .workspace { width:100%!important; }
 }
@@ -408,7 +408,7 @@ button:not(:disabled):active { transform:translateY(1px); }
   .workExperience .optionGroup > div { display:grid!important;grid-template-columns:1fr!important; }
   .workExperience .optionGroup button { width:100%!important; }
   .workExperience .choice { width:100%; }
-  .workSessionBar { top:108px;gap:9px;padding:12px; }
+  .workSessionBar { top:132px;gap:9px;padding:12px; }
   .workSessionActions button { min-height:44px; }
   .knownFacts div { align-items:baseline; }
 }

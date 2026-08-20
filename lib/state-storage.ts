@@ -130,6 +130,14 @@ export function patchStoredState(patch: Partial<MatiState>): WriteResult {
   return writeStoredState({ ...loaded.state, ...patch });
 }
 
+/**
+ * Fields that record where she is rather than what she wrote. Listed once so
+ * adding another cannot be half-applied: `gapStage` was added as a navigation
+ * field and not added here, which made the app's own gap-answer write trip the
+ * cross-tab data-loss alarm that this list exists to prevent.
+ */
+const NAVIGATION_FIELDS = ['manualStage', 'gapStage'] as const;
+
 /** Key-sorted serialization, so two payloads written by different code paths compare equal. */
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
@@ -156,13 +164,24 @@ export function sameExceptNavigation(before: string, after: string): boolean {
   try {
     const strip = (raw: string) => {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      delete parsed.manualStage;
+      for (const field of NAVIGATION_FIELDS) delete parsed[field];
       return canonical(parsed);
     };
     return strip(before) === strip(after);
   } catch {
     return false;
   }
+}
+
+/**
+ * True when a payload another tab just created holds nothing an instructor
+ * wrote — which is what a freshly-mounted page autosaving its empty state
+ * looks like, and what happens in the surviving tab right after a delete.
+ * Without this the receiving tab is warned that a plan is about to be
+ * overwritten moments after she deliberately deleted it.
+ */
+export function isEmptyPayload(raw: string): boolean {
+  return sameExceptNavigation(JSON.stringify(emptyState), raw);
 }
 
 /** Removes both keys. Guarded for the same reason writes are. */

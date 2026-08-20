@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FormativeAnswers, MatiState, resolveStage, stage2SectionStarted, stageFromDate, stageNames, Stage } from '../lib/stages';
 import { readStoredState } from '../lib/state-storage';
 
@@ -79,12 +80,18 @@ export default function WorkSessionLayer() {
   const [count, setCount] = useState(0);
   const [title, setTitle] = useState('');
   const [initializedKey, setInitializedKey] = useState('');
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sync = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
+        // Tracked here rather than once on mount: the slot lives inside the
+        // route that this layer is watching, so it appears and disappears as
+        // she moves between views. Re-reading it on every sync is the same
+        // cheap document query the rest of this effect already does.
+        setSlot(document.getElementById('workSessionSlot'));
         const state = readStoredState();
         const nextStage = currentStage(state);
         const candidates = workItemsFor(nextStage);
@@ -159,9 +166,19 @@ export default function WorkSessionLayer() {
     }, 180);
   };
 
-  if (count <= 1) return null;
+  if (count <= 1 || !slot) return null;
 
-  return (
+  // Portalled into a slot placed after the header rather than rendered where
+  // this component sits in the tree. It used to render BEFORE the header, so
+  // the header scrolled underneath the sticky bar and the whole .stageStrip
+  // became unclickable; settling that with z-index only swapped which control
+  // was unreachable — measured at scrollY 240-270 on a 412x480 viewport, the
+  // strip covered the bar's own הקודם/הבא. Neither element out-stacks the
+  // other now; they simply are not in the same place. This component already
+  // reaches across the whole document (hiding sections, observing mutations,
+  // clicking the real save button), so owning its own mount point is in
+  // keeping with how it works rather than an exception to it.
+  return createPortal(
     <section className="workSessionBar" aria-label="התקדמות בסשן העבודה">
       <div className="workSessionMeta">
         <span>{stageNames[stage]} · חלק {index + 1} מתוך {count}</span>
@@ -176,6 +193,7 @@ export default function WorkSessionLayer() {
           <button className="workSessionPrimary" onClick={finish}>שמירה ומה למדנו</button>
         )}
       </div>
-    </section>
+    </section>,
+    slot,
   );
 }

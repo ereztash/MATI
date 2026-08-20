@@ -18,7 +18,7 @@ import {
 } from '../lib/stages';
 import { calendarContext, greetingForDaypart } from '../lib/context-engine';
 import { patchStoredState, readStoredState } from '../lib/state-storage';
-import StagePicker from './stage-picker';
+import StagePicker, { GAP_EXPLANATION, GAP_QUESTION } from './stage-picker';
 
 type View = 'home' | 'work' | 'insight' | 'journey';
 
@@ -155,10 +155,17 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
                 pre-existing text mismatch (React #418, reproduced on the
                 served build in December): stageFromDate() with no argument
                 reads build time on the server and real time on the client. */}
+            {/* A heading that is true before the date is known, so the served
+                document is never headingless — gating the whole hero left `/`
+                with no <h1> at all, which is a page-has-heading-one violation
+                on the first screen. It is replaced, not corrected, once the
+                clock is readable: the point of the gate is that the prerender
+                must not assert a stage, not that it must say nothing. */}
+            {!dateKnown && <h1>מתי המתי״א</h1>}
             {dateKnown && (inCalendarGap ? (
               <>
-                <h1>באיזה שלב בלוח השנה את נמצאת?</h1>
-                <p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p>
+                <h1>{GAP_QUESTION}</h1>
+                <p>{GAP_EXPLANATION}</p>
               </>
             ) : (
               <>

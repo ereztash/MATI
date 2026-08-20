@@ -252,3 +252,35 @@ The gap answer also needed to stop being `manualStage`, which was both too short
 `lib/state-storage.ts` owned every read and no writes, which is how three hand-rolled `try/catch` blocks around `setItem` drifted into three different policies and a fourth call site was left unguarded entirely. It now owns `writeStoredState`, `patchStoredState` and `clearStoredState`; `patchStoredState` refuses to write over a save it could not read, which is what finding #2 was.
 
 **Suite after this pass: 109 unit tests, 23 e2e tests, all four checks, readiness unchanged at 6/8.** One readiness probe was rewritten: it required the literal string `localStorage.setItem(STORAGE_KEY` inside `app/page.tsx`, so moving that call into the module that owns the key read as R2 being withdrawn. It now asserts the behaviour rather than the location.
+
+## Reviewing the fixes themselves — the regression test that tested nothing, 2026-08-20
+
+The pass above was re-reviewed, on the principle that a fix is a change like any other and deserves the same suspicion as the code it replaced. The most useful finding was about the previous pass's own test.
+
+### The overlap test passed against every broken build I could produce
+
+The sweep written to pin the stage-strip occlusion looked thorough — 31 scroll positions, three targets, `elementFromPoint` at each. It was inert. Two independent reasons, either of which alone was enough:
+
+**`window.scrollTo` inside a single `page.evaluate` never takes effect.** The whole loop ran at one position. Measured directly: asking for 0, 200 and 400 in one evaluate leaves `window.scrollY` at 8 all three times, and the strip's `top` at 419 all three times. Scrolling only lands across round trips.
+
+**The default 1280×800 viewport has no scroll range to sweep.** The work view is 907 px tall there — 107 px of travel, nowhere near the band where the two elements meet.
+
+So the test was reverted-fix-proof. Portal removed: passed. `display:contents` removed: passed. Both removed *and* the CSS restored to the committed z-index version: passed. It was asserting an empty list of problems it had no mechanism to find. It now scrolls one step per round trip at 412×480, and asserts that the sweep actually moved (`range > 400`, `deepest > 400`) alongside asserting no occlusion — because both failure modes above produce an empty problem list that reads as success.
+
+With real scrolling, the committed build fails it exactly as the review claimed: at `scrollY` 240 and 270 the stage strip covers the work-session bar's own הקודם/הבא. That is the inversion the z-index fix introduced, reproduced on demand.
+
+### What that says about the z-index attempt
+
+The first fix for the occlusion raised the header above the bar. Both elements were sticky and overlapping; raising one lowers the other. The portal is not a better stacking order, it is the removal of the premise: the bar is mounted into a slot after the header, so the two are never in the same place and neither needs to win. `#workSessionSlot` is `display:contents` — a real wrapper box would become the sticky containing block and the bar would scroll out of view instead of pinning.
+
+Worth naming: `display:contents` turned out **not** to be load-bearing for the occlusion itself. Probed on its own, swapping it for `display:block` changed no measurement. It is there for the sticky containing block, which is a different concern, and the probe that established this is the reason the comment in `experience.css` no longer claims more than it does.
+
+### The other new test was falsifiable on the first try
+
+The delete-then-keystroke test fails on the un-fixed build for the right reason — `plan.audience` is `undefined` after typing, the character genuinely lost — and passes with `deleteCount` threaded into the autosave effect's dependencies.
+
+### Coverage gap closed, no defect behind it
+
+Both `axe` scans navigate to the work view first, so the home screen had never been scanned — and the gap picker exists nowhere else. It is also the one place in the app that puts `aria-disabled` on a button that stays clickable on purpose, which is the shape those rules exist to catch. Scanned in both a gap month and a real one: **no violations in either.** The scan was added anyway, so the surface stays covered rather than being clean by luck.
+
+**Suite after this pass: 113 unit tests, 25 e2e tests, all four checks, readiness unchanged at 6/8.**

@@ -49,6 +49,9 @@ async function visible() {
   });
 }
 
+// Pinned so the persona always walks the Stage 1 planning flow this script is
+// written about, rather than whichever stage the month CI runs in produces.
+await page.clock.setFixedTime(new Date('2026-08-15T10:00:00'));
 await page.goto(URL, { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
 

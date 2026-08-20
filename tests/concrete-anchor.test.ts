@@ -81,3 +81,17 @@ test('a spelled-out count anchors, and a lookalike inside another word does not'
   // "חוששת" as a count and silence a sentence that is pure evaluation.
   assert.equal(needsConcreteAnchor('אני חוששת שהתהליך לא באמת משמעותי'), true);
 });
+
+test('peeling a Hebrew prefix must not manufacture a count out of an ordinary word', () => {
+  // Whole-word matching is not enough on its own: stripping the prefix to let
+  // "בשלושה" read as three also lets "העשרה" (enrichment — everyday
+  // special-ed vocabulary) reach "עשרה" (ten), and "משני" (secondary) reach
+  // "שני" (two). Both sentences are pure evaluation with no evidence, and both
+  // were silently passing as anchored — the exact miss R8 exists to prevent.
+  assert.equal(needsConcreteAnchor('הייתה העשרה משמעותית מאוד לצוות'), true);
+  assert.equal(needsConcreteAnchor('התהליך היה משני ולא באמת משמעותי'), true);
+  // The words still count when written as themselves, and prefixes still peel
+  // for everything that has no such collision.
+  assert.equal(needsConcreteAnchor('היו שני מפגשים והתהליך היה משמעותי'), false);
+  assert.equal(needsConcreteAnchor('בשלושה מפגשים ראינו שיפור משמעותי'), false);
+});

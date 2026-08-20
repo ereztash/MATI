@@ -16,6 +16,16 @@ import { canOpenStage, MatiState, Stage, stageNames, stageWindowLabel } from '..
  * Both are structural now: the gate belongs to the one handler each caller
  * passes in, and the sub-labels are read from `stageWindowLabel`.
  */
+/**
+ * The question itself, not just the buttons. Both callers frame it in their own
+ * container — a centred card in the work view, the home hero in the shell — so
+ * the wording lives here while the layout stays with each of them. Without this
+ * the heading and its paragraph were still duplicated verbatim in two files,
+ * which is what this component's own doc comment claimed to have fixed.
+ */
+export const GAP_QUESTION = 'באיזה שלב בלוח השנה את נמצאת?';
+export const GAP_EXPLANATION = 'התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.';
+
 export default function StagePicker({ state, notice = '', onChoose }: {
   state: MatiState;
   /** Refusals from `onChoose`. Omitted where the caller already renders one. */

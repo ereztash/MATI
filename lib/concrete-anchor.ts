@@ -71,6 +71,17 @@ const SPELLED_QUANTITIES = new Set([
 /** Single-letter particles Hebrew glues onto the front of a word: ו/ה/ב/ל/ש/מ/כ. */
 const HEBREW_PREFIXES = 'והבלשמכ';
 
+/**
+ * Quantity words that are also the tail of an unrelated everyday word, so
+ * peeling a prefix off reaches them by accident: "העשרה" (enrichment — ordinary
+ * special-ed vocabulary) ends in "עשרה" (ten), and "משני" (secondary) ends in
+ * "שני" (two). Both are pure evaluation with no evidence in them, and both were
+ * silently reading as anchored, which is the exact failure the R8 nudge exists
+ * to catch. They still count when written as themselves — "שני מורים" is a
+ * count — they just cannot be arrived at by stripping letters.
+ */
+const NOT_REACHABLE_BY_PEELING = new Set(['עשרה', 'שני', 'שניה', 'שנייה']);
+
 const HEBREW_MONTHS = ['ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר', 'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני'];
 
 /** Below this the text is a stub, not a claim — nudging it would be nagging, not helping. */
@@ -94,7 +105,9 @@ function hasSpelledQuantity(text: string): boolean {
   return tokens.some((token) => {
     for (let cut = 0; cut <= 2 && cut < token.length; cut += 1) {
       if (cut > 0 && !HEBREW_PREFIXES.includes(token[cut - 1])) break;
-      if (SPELLED_QUANTITIES.has(token.slice(cut))) return true;
+      const candidate = token.slice(cut);
+      if (cut > 0 && NOT_REACHABLE_BY_PEELING.has(candidate)) continue;
+      if (SPELLED_QUANTITIES.has(candidate)) return true;
     }
     return false;
   });

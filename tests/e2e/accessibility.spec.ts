@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { atDate, IN_STAGE_1, nav, savedPlan, seed, STORAGE_KEY } from './fixtures';
+import { atDate, IN_CALENDAR_GAP, IN_STAGE_1, nav, savedPlan, seed, STORAGE_KEY } from './fixtures';
 
 // Same reason as instructor.spec.ts: both scans below need the work view to be
 // on a real stage. `.ganttTrack` only exists inside Stage 1, and in a gap month
@@ -43,6 +43,27 @@ test('Stage 1 has no aria-prohibited-attr, heading-order, or missing-h1 violatio
   // the aria-prohibited-attr finding, so it has to actually be on screen.
   await expect(page.locator('.ganttTrack')).toBeVisible();
   await expect(page.locator('.ganttTrack')).toHaveAttribute('role', 'img');
+});
+
+test('the home screen is clean too, in a gap month and outside one', async ({ page }) => {
+  // Both scans above navigate straight to the work view, so the home screen was
+  // never scanned at all — and the gap picker only exists there. That picker is
+  // new, and it is the one surface in the app that puts aria-disabled on a
+  // button that stays clickable on purpose, which is exactly the shape
+  // aria-prohibited-attr and friends exist to catch. Scanned in both months
+  // because the picker is conditional: in a real window it is absent, and a
+  // scan that silently misses it would pass for the wrong reason.
+  for (const [when, expectPicker] of [[IN_CALENDAR_GAP, 1], [IN_STAGE_1, 0]] as const) {
+    await atDate(page, when);
+    await page.goto('/');
+    await expect(page.locator('.gapOptions')).toHaveCount(expectPicker);
+    await expect(page.locator('h1:visible')).toHaveCount(1);
+
+    const ids = ruleIds((await new AxeBuilder({ page }).analyze()).violations);
+    expect(ids, `home at ${when} should not have aria-prohibited-attr`).not.toContain('aria-prohibited-attr');
+    expect(ids, `home at ${when} should not have a heading-order violation`).not.toContain('heading-order');
+    expect(ids, `home at ${when} should have an h1`).not.toContain('page-has-heading-one');
+  }
 });
 
 test('every stage opens with exactly one h1, and nothing after it skips a level', async ({ page }) => {

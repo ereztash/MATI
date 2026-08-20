@@ -136,18 +136,86 @@ test('the work-session bar does not cover the stage strip', async ({ page }) => 
   // elementFromPoint at the centre of all three stage buttons returned the bar
   // (or its children), i.e. stage navigation was entirely unclickable for a
   // real user. Every directed test clicked with force, so none of them saw it.
+  // A short viewport on purpose. At the default 1280x800 the work view is only
+  // ~110px taller than the window, so the strip and the bar never scroll close
+  // enough to reach each other and the check passes without testing anything.
+  // 412x480 is a real phone with the browser chrome and keyboard-adjacent UI
+  // showing, and it is where the overlap band actually lives.
+  await page.setViewportSize({ width: 412, height: 480 });
   await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
   await page.goto('/');
   await nav(page, 'עבודה');
   await expect(page.locator('.workSessionBar')).toBeVisible();
 
-  const blocked = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('.stageStrip button')).flatMap((button, index) => {
-      const box = button.getBoundingClientRect();
-      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-      return button.contains(hit) ? [] : [`stage ${index + 1} blocked by ${hit?.className || hit?.tagName}`];
-    }));
-  expect(blocked).toEqual([]);
+  const range = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+  const problems: string[] = [];
+  const checked: Record<string, number> = { stage: 0, 'next/save': 0, prev: 0 };
+  let positions = 0;
+  let deepest = 0;
+
+  // One scroll per round trip, deliberately. Doing the whole sweep inside a
+  // single page.evaluate is the obvious way to write this and it silently does
+  // nothing: window.scrollTo inside one synchronous evaluate never takes
+  // effect, so scrollY stays put and every iteration re-measures the same
+  // position. An earlier version of this test did exactly that and passed
+  // against a build with the bug still in it.
+  for (let y = 0; y <= range; y += 30) {
+    await page.evaluate((target) => window.scrollTo({ top: target, behavior: 'instant' }), y);
+    const step = await page.evaluate(() => {
+      const found: string[] = [];
+      const seen: string[] = [];
+      const topbar = document.querySelector('.experienceTopbar')!.getBoundingClientRect().height;
+      const targets = [['.stageStrip button', 'stage'], ['.workSessionPrimary', 'next/save'], ['.workSessionSecondary', 'prev']];
+      for (const [selector, label] of targets) {
+        const element = document.querySelector(selector);
+        if (!element) continue;
+        const box = element.getBoundingClientRect();
+        // Only counted while at least half visible below the topbar: something
+        // scrolled off screen is not a target anyone is trying to hit.
+        const visible = Math.max(0, Math.min(box.bottom, window.innerHeight) - Math.max(box.top, topbar));
+        if (visible / box.height < 0.5) continue;
+        seen.push(label);
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        if (!element.contains(hit)) found.push(`${label} blocked by ${hit?.className || hit?.tagName}`);
+      }
+      return { found, seen, scrollY: Math.round(window.scrollY) };
+    });
+    positions += 1;
+    deepest = Math.max(deepest, step.scrollY);
+    for (const label of step.seen) checked[label] += 1;
+    for (const problem of step.found) problems.push(`@${step.scrollY} ${problem}`);
+  }
+
+  // Checked in both directions. Settling this with z-index instead of DOM order
+  // simply moved the problem: on the committed build this sweep reports the
+  // strip covering the bar's own הקודם/הבא at scrollY 240 and 270.
+  expect(problems).toEqual([]);
+
+  // And the sweep has to have actually swept. Both of the failure modes above —
+  // a no-op scroll, and a viewport too tall to have a scroll range — leave an
+  // empty problems list that reads as success, so the movement is asserted
+  // rather than assumed.
+  expect(range).toBeGreaterThan(400);
+  expect(deepest).toBeGreaterThan(400);
+  expect(checked['next/save']).toBe(positions);
+  expect(checked.prev).toBe(positions);
+});
+
+test('the first keystroke after deleting local data is still saved', async ({ page }) => {
+  // Regression: the delete handler set a "skip the next autosave" flag so the
+  // key it had just removed would not be re-created a render later. On a visit
+  // where the state was already the empty state, setState(emptyState) was an
+  // Object.is no-op, the effect never ran, and the flag survived to swallow the
+  // next real keystroke instead — one character silently unsaved, on a page
+  // whose header promises "הטיוטה נשמרת אוטומטית".
+  await page.goto('/');
+  await nav(page, 'עבודה');
+  await page.locator('.deleteLocal summary').click();
+  await page.locator('.deleteLocalConfirm').click();
+  await expect.poll(async () => page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBeNull();
+
+  await page.locator('.field', { hasText: 'מי צוותי המוקד' }).locator('input').fill('א');
+  await expect.poll(async () => (await readStored(page)).plan?.audience).toBe('א');
 });
 
 test('adjusting a personal-Gantt milestone never clears savedAt, and reset returns to the suggested date', async ({ page }) => {
@@ -310,6 +378,13 @@ test('a change made in another tab surfaces here instead of being silently overw
 
   const otherTab = await context.newPage();
   await otherTab.goto('/');
+  // The writing tab must be on the work view BEFORE it writes, or this proves
+  // nothing: `.noticeWarn` is rendered only by page.tsx's Home, which
+  // ExperienceShell mounts only under view === 'work'. Asserting its absence
+  // on the home view — or after navigating there afterwards, which mounts a
+  // fresh Home with its state reset — cannot fail for any implementation.
+  await nav(otherTab, 'עבודה');
+
   // Merely opening a second tab must NOT raise the alarm. SessionStageReset
   // rewrites the key on every load to strip manualStage, which at the
   // StorageEvent level is indistinguishable from an edit — so this used to
@@ -321,6 +396,11 @@ test('a change made in another tab surfaces here instead of being silently overw
     s.manualStage = 2;
     localStorage.setItem(key, JSON.stringify(s));
   }, STORAGE_KEY);
+  // A real wait, not a bare toHaveCount(0): a zero-count assertion is satisfied
+  // on its first poll, microseconds after evaluate() returns and before the
+  // cross-process StorageEvent could possibly have landed — so it would pass
+  // against an implementation that warns on every write.
+  await page.waitForTimeout(500);
   await expect(page.locator('.noticeWarn')).toHaveCount(0);
 
   await otherTab.evaluate((key) => {
@@ -330,11 +410,8 @@ test('a change made in another tab surfaces here instead of being silently overw
   }, STORAGE_KEY);
 
   await expect(page.locator('.noticeWarn p')).toContainText('התוכנית עודכנה בטאב אחר');
-  // The tab that made the change is not told anything about its own write.
-  // Asserted on the *work* view: `.notice` is rendered only by page.tsx's Home,
-  // which ExperienceShell mounts only under view === 'work' — so checking this
-  // on the default home view could never fail, for any implementation.
-  await nav(otherTab, 'עבודה');
+  // The tab that made the change is not told anything about its own write —
+  // now a real check, because Home has been mounted there throughout.
   await expect(otherTab.locator('.noticeWarn')).toHaveCount(0);
   await otherTab.close();
 });

@@ -7,13 +7,13 @@ import {
   rubricForNextYear, scoreDimensions, selfEffectivenessAverage, smartGoalLooksValid, resolveStage, Stage, stageFromDate, stageLockReason, stageNames,
   studentImprovementPercent, summarizeLongText,
 } from '../lib/stages';
-import { clearStoredState, loadStoredState, sameExceptNavigation, STORAGE_KEY, writeStoredState } from '../lib/state-storage';
+import { clearStoredState, isEmptyPayload, loadStoredState, sameExceptNavigation, STORAGE_KEY, writeStoredState } from '../lib/state-storage';
 import { evaluateSmartGoal } from '../lib/smart-criteria';
 import { addDays, buildPersonalGantt, timelinePercent, toDateOnly, TimelineMilestone } from '../lib/plan-timeline';
 import { changedFieldsSummary, diffPlans } from '../lib/plan-revisions';
 import { ANCHOR_HINT, needsConcreteAnchor } from '../lib/concrete-anchor';
 import { independenceReading } from '../lib/independence';
-import StagePicker from './stage-picker';
+import StagePicker, { GAP_EXPLANATION, GAP_QUESTION } from './stage-picker';
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
 
 function Stars({ score }: { score: number }) { return <span className="stars" aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>; }
@@ -34,6 +34,7 @@ export default function Home() {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const skipNextSave = useRef(false);
   const warnedRef = useRef(false);
+  const [deleteCount, setDeleteCount] = useState(0);
   const autoStage = stageFromDate();
   const activeStage = resolveStage(state).stage;
   const dimensions = useMemo(() => scoreDimensions(state), [state]);
@@ -57,7 +58,13 @@ export default function Home() {
     if (skipNextSave.current) { skipNextSave.current = false; return; }
     const result = writeStoredState(state);
     setSaveBlocked(result !== 'ok');
-  }, [state, hydrated]);
+    // `deleteCount` is a dependency so this effect is guaranteed to run after a
+    // delete and clear the flag above. Without it, deleting on a visit where
+    // the state is already `emptyState` left `setState(emptyState)` an Object.is
+    // no-op: the effect never ran, the flag stayed set, and it swallowed the
+    // next real keystroke instead — measured, one character silently unsaved on
+    // a page whose header promises "הטיוטה נשמרת אוטומטית".
+  }, [state, hydrated, deleteCount]);
   useEffect(() => {
     // The browser's native `storage` event fires only in OTHER tabs, never
     // the one that made the write — exactly the signal needed here. Two
@@ -87,7 +94,12 @@ export default function Home() {
       // parses both payloads, so there is nothing to gain by redoing it on
       // every keystroke the other tab makes.
       if (warnedRef.current) return;
-      if (event.oldValue !== null && sameExceptNavigation(event.oldValue, event.newValue)) return;
+      // A key that did not exist a moment ago was created, not edited — and
+      // the tab that created it is usually this app autosaving an empty state
+      // on mount, including in the tab that survives a delete. Warning there
+      // announces the loss of a plan she deliberately erased seconds earlier.
+      if (event.oldValue === null) { if (isEmptyPayload(event.newValue)) return; }
+      else if (sameExceptNavigation(event.oldValue, event.newValue)) return;
       warnedRef.current = true;
       setOtherTabWrote(true);
     };
@@ -153,7 +165,7 @@ export default function Home() {
     setNotice(hasLargeGoalResultGap(state) ? 'אני רואה פער גדול בין המטרות לתוצאות. זו הזדמנות לחשוב אחרת: התמונה המקצועית למטה מסמנת איפה כדאי לשנות מנגנון, לא רק להוסיף מאמץ.' : 'הרפלקציה נשמרה. התמונה המקצועית למטה מבוססת על הנתונים שהזנת — לא על ניחוש.');
   }
 
-  if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>באיזה שלב בלוח השנה את נמצאת?</h1><p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p><StagePicker state={state} onChoose={switchStage} />{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
+  if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>{GAP_QUESTION}</h1><p>{GAP_EXPLANATION}</p><StagePicker state={state} onChoose={switchStage} />{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
 
   const instructor = state.formative.context.instructorName.trim();
   const previousFormative = [...state.history].reverse().find((h) => h.stage === 2);
@@ -163,6 +175,16 @@ export default function Home() {
       <div className="welcomeBlock"><p className="eyebrow">מתי המתי״א</p><h1>{instructor ? `שלום ${instructor}, ` : 'שלום, '}כאן עוצרות כדי לראות מה באמת זז.</h1><p className="lead">את נמצאת בשלב <strong>{stageNames[activeStage]}</strong>. המטרה כאן היא להפוך את העבודה המקצועית לראיות, החלטות וצעדים שאפשר לקחת חזרה לשטח.</p><div className="autosave"><span className="autosaveDot" /> הטיוטה נשמרת אוטומטית</div></div>
       <nav className="stageStrip" aria-label="שלבי העבודה לאורך השנה">{([1, 2, 3] as Stage[]).map((stage) => { const locked = !canOpenStage(stage, state); const completed = stage === 1 ? planSaved(state) : stage === 2 ? Boolean(state.formative.savedAt) : Boolean(state.summative.savedAt); return <button key={stage} onClick={() => switchStage(stage)} className={`stage ${activeStage === stage ? 'active' : ''} ${completed ? 'completed' : ''}`} aria-disabled={locked} aria-current={activeStage === stage ? 'step' : undefined}><span className="stageNumber" aria-hidden="true">{completed ? '✓' : stage}</span><span className="stageText"><strong>{stageNames[stage]}</strong><small>{locked ? 'ייפתח לאחר השלמת הבסיס' : activeStage === stage ? 'כאן את נמצאת עכשיו' : completed ? 'נשמר' : 'אפשר לעבור'}</small></span>{locked && <span className="lock" aria-hidden="true">🔒</span>}</button>; })}</nav>
     </header>
+    {/* WorkSessionLayer portals its sticky bar in here. It is a sibling of this
+        page in the React tree but must sit AFTER the header in the DOM: a
+        sticky element pinned near the top covers whatever scrolls beneath it,
+        so while it preceded the header it made the whole stage strip
+        unclickable — and forcing the header above it with z-index only
+        inverted the problem, making the bar's own Prev/Next/Save unreachable
+        across the scroll band where both are on screen (both measured with
+        elementFromPoint). Placed after the header there is no overlap to
+        arbitrate: the strip scrolls away, then the bar pins. */}
+    <div id="workSessionSlot" />
     {saveBlocked && <div className="notice noticeWarn" role="alert"><span aria-hidden="true">!</span><p>לא הצלחתי לשמור באופן אוטומטי כרגע — ייתכן שהאחסון בדפדפן מלא או חסום (למשל בגלישה פרטית). כדאי להעתיק את מה שכתבת למקום אחר לפני שסוגרים את הדף.</p></div>}
     {otherTabWrote && <div className="notice noticeWarn" role="alert"><span aria-hidden="true">!</span><p>התוכנית עודכנה בטאב אחר באותו דפדפן. שמירה כאן תחליף את מה ששונה שם — כדאי לרענן את הדף לפני שממשיכות, אם שני הטאבים פתוחים בכוונה.</p></div>}
     {notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}
@@ -183,7 +205,7 @@ export default function Home() {
         // one render later. Skip exactly that write; the next real edit saves
         // normally.
         skipNextSave.current = true;
-        setState(emptyState); setNotice('המידע המקומי נמחק.');
+        setState(emptyState); setDeleteCount((n) => n + 1); setNotice('המידע המקומי נמחק.');
       }}>כן, למחוק את הכל</button></div></details></footer>
   </main></>;
 }

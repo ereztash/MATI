@@ -63,6 +63,12 @@ async function main() {
   page.on('pageerror', (err) => findings.pageErrors.push(String(err)));
   page.on('dialog', async (d) => { findings.dialogs.push(`${d.type()}: ${d.message()}`); await d.accept(); });
 
+  // Pin the calendar, for the same reason tests/e2e/fixtures.ts does: this
+  // harness declares its scope as the Stage 1 work view, but stageFromDate
+  // reads the real clock — so run in December it fuzzes Stage 2, in May
+  // Stage 3, and on 1 October the calendar-gap picker, while still printing
+  // "Stage-1 work view".
+  await page.clock.setFixedTime(new Date('2026-08-15T10:00:00'));
   await page.goto(BASE_URL);
   await page.waitForLoadState('networkidle');
   await page.locator('.experienceNav button', { hasText: 'עבודה' }).click();

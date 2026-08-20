@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyState } from '../lib/stages';
-import { LEGACY_KEY, loadStoredState, migrateState, STORAGE_KEY } from '../lib/state-storage';
+import { LEGACY_KEY, STORAGE_KEY, isEmptyPayload, loadStoredState, migrateState, sameExceptNavigation } from '../lib/state-storage';
 
 /** Minimal localStorage stand-in; loadStoredState only needs get/set semantics. */
 function stubStorage(entries: Record<string, string> = {}) {
@@ -88,4 +88,30 @@ test('loadStoredState separates a first visit from an unreadable save', () => {
 
 test('loadStoredState returns the empty state when there is no window', () => {
   assert.deepEqual(loadStoredState(), { state: emptyState, corrupted: false });
+});
+
+test('a write that only changes where she is does not read as an edit', () => {
+  // The cross-tab warning is driven by this. SessionStageReset strips
+  // manualStage on every page load, so without this comparison merely opening
+  // a second tab told the first that its work was about to be overwritten.
+  const base = JSON.stringify({ plan: { audience: 'א' }, history: [] });
+  assert.equal(sameExceptNavigation(base, JSON.stringify({ plan: { audience: 'א' }, history: [], manualStage: 2 })), true);
+  // gapStage is the second navigation field, added later — it was missed here
+  // once already, which made the app's own gap-answer write raise the alarm.
+  assert.equal(sameExceptNavigation(base, JSON.stringify({ plan: { audience: 'א' }, history: [], gapStage: { stage: 1, chosenAt: 'x' } })), true);
+  assert.equal(sameExceptNavigation(base, JSON.stringify({ plan: { audience: 'שונה' }, history: [] })), false);
+});
+
+test('key order does not make two identical payloads look different', () => {
+  // The two writers serialize from differently-shaped objects, so a plain
+  // string compare would report every cross-tab write as an edit.
+  assert.equal(sameExceptNavigation('{"a":1,"b":2}', '{"b":2,"a":1}'), true);
+});
+
+test('an empty payload is recognised however it was serialized', () => {
+  // What a freshly-mounted tab autosaves, including the tab that survives a
+  // delete — warning there announces the loss of a plan just deliberately erased.
+  assert.equal(isEmptyPayload(JSON.stringify(emptyState)), true);
+  assert.equal(isEmptyPayload(JSON.stringify({ ...emptyState, manualStage: 2 })), true);
+  assert.equal(isEmptyPayload(JSON.stringify({ ...emptyState, plan: { ...emptyState.plan, audience: 'תוכן' } })), false);
 });
