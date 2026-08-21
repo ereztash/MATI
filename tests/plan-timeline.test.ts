@@ -214,3 +214,97 @@ test('a fixed window that closes exactly as the timeline opens is still shown', 
   assert.deepEqual(kindsAt(lastMomentOfSummative), ['summativeWindow'],
     'and by then the formative window of that year is long closed');
 });
+
+/**
+ * The timeframe field is the one place she states when her work happens, and
+ * for a long time the Gantt read it only for a cadence phrase and threw the
+ * months away. Measured before this was fixed: "ספטמבר–ינואר",
+ * "אוקטובר–דצמבר", "לאורך כל השנה" and "נתחיל אחרי החגים" produced a
+ * byte-identical chart — same axis, and the three "personal" milestones on the
+ * same three dates, because their defaults were fixed proportions of the
+ * program year. A מדריכה who wrote "אוקטובר–דצמבר" was shown her first small
+ * step on 3 September, before her own plan begins.
+ */
+const withTimeframe = (timeframe: string) => buildPersonalGantt(stateWith(savedPlan({
+  timeframe, nextSmallStep: 'לשבת עם רכזת השכבה', managers: 'מנהלת בית הספר', flexibility: 'נעבור לליווי פרטני',
+})))!;
+const personalDates = (g: ReturnType<typeof withTimeframe>) =>
+  g.milestones.filter((m) => m.adjustable).map((m) => toDateOnly(m.date));
+
+test('two different timeframes produce two different Gantts', () => {
+  const autumn = withTimeframe('ספטמבר–ינואר, אחת לשבועיים');
+  const winter = withTimeframe('אוקטובר–דצמבר, אחת לשבוע');
+
+  assert.notDeepEqual(personalDates(autumn), personalDates(winter),
+    'the personal milestones must move with the period she described');
+  assert.deepEqual(
+    [autumn.planWindow && toDateOnly(autumn.planWindow.start), winter.planWindow && toDateOnly(winter.planWindow.start)],
+    ['2026-09-01', '2026-10-01'],
+  );
+});
+
+test('every personal milestone falls inside the period she described', () => {
+  const gantt = withTimeframe('אוקטובר–דצמבר');
+  const window = gantt.planWindow!;
+  for (const milestone of gantt.milestones.filter((m) => m.adjustable)) {
+    assert.ok(milestone.date.getTime() >= window.start.getTime(),
+      `${milestone.label} (${toDateOnly(milestone.date)}) starts before her plan does`);
+    assert.ok(milestone.date.getTime() <= window.end.getTime(),
+      `${milestone.label} (${toDateOnly(milestone.date)}) falls after her plan ends`);
+  }
+});
+
+test('a milestone is never scheduled before the plan it belongs to was written', () => {
+  // She writes "ספטמבר–ינואר" but only saves in November: the window opened
+  // two months ago, and a "first small step" dated September would be advice
+  // about a date that has already passed.
+  const late = buildPersonalGantt(stateWith(savedPlan(
+    { timeframe: 'ספטמבר–ינואר', nextSmallStep: 'לשבת עם רכזת השכבה' },
+    '2026-11-20T09:00:00.000Z',
+  )))!;
+  const smallStep = late.milestones.find((m) => m.kind === 'smallStep')!;
+  assert.ok(smallStep.date.getTime() >= new Date('2026-11-20T09:00:00.000Z').getTime());
+});
+
+test('a timeframe naming no months falls back rather than inventing a window', () => {
+  const vague = withTimeframe('נתחיל אחרי החגים ונראה איך זה זורם');
+  assert.equal(vague.planWindow, null);
+  assert.deepEqual(personalDates(vague), personalDates(withTimeframe('לאורך כל השנה, אחת לחודש')),
+    'both fall back to the same program-year placement, which is the documented behaviour when she named no period');
+  assert.ok(vague.milestones.some((m) => m.kind === 'formativeWindow'), 'and the fixed windows are unaffected');
+});
+
+test('a period that closed before she saved is not drawn behind her', () => {
+  const stale = buildPersonalGantt(stateWith(savedPlan(
+    { timeframe: 'ספטמבר–נובמבר' },
+    '2027-03-01T09:00:00.000Z',
+  )))!;
+  assert.equal(stale.planWindow, null);
+  assert.ok(!stale.milestones.some((m) => m.kind === 'planWindow'));
+});
+
+test('the axis contains everything drawn on it', () => {
+  for (const timeframe of ['ספטמבר–ינואר', 'אוקטובר–דצמבר', 'יולי–יוני', 'נתחיל אחרי החגים']) {
+    const gantt = withTimeframe(timeframe);
+    for (const milestone of gantt.milestones) {
+      assert.ok(milestone.date.getTime() >= gantt.start.getTime(),
+        `${timeframe}: ${milestone.label} starts before the axis`);
+      assert.ok((milestone.rangeEnd ?? milestone.date).getTime() <= gantt.end.getTime(),
+        `${timeframe}: ${milestone.label} ends after the axis`);
+    }
+  }
+});
+
+test('a plan saved in July anchors to the school year that July opens', () => {
+  // schoolYearPair's boundary, reached by the most ordinary save there is: the
+  // pilot's planning window is July–September. One month off here dates the
+  // evaluation windows a full year early.
+  const july = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר–ינואר' }, '2026-07-03T09:00:00.000Z')))!;
+  assert.equal(toDateOnly(july.planWindow!.start), '2026-09-01');
+  assert.equal(toDateOnly(july.milestones.find((m) => m.kind === 'formativeWindow')!.date), '2026-12-01');
+  assert.equal(toDateOnly(july.end), '2027-06-30');
+});
+
+test('an unreadable savedAt produces no Gantt rather than an invalid one', () => {
+  assert.equal(buildPersonalGantt(stateWith(savedPlan({}, 'לא תאריך'))), null);
+});

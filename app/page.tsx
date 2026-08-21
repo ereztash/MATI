@@ -342,7 +342,7 @@ function PlanChangeLog({ state }: { state: MatiState }) {
 function PersonalGanttView({ state, setState }: { state: MatiState; setState: React.Dispatch<React.SetStateAction<MatiState>> }) {
   const gantt = useMemo(() => buildPersonalGantt(state), [state]);
   if (!gantt) return null;
-  const { start, end, now, milestones, cadence } = gantt;
+  const { start, end, now, milestones, cadence, planWindow } = gantt;
   const todayPct = timelinePercent(now, start, end);
   const fmt = (d: Date) => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
   const bands = milestones.filter((m) => m.rangeEnd);
@@ -373,24 +373,25 @@ function PersonalGanttView({ state, setState }: { state: MatiState; setState: Re
 
   const todayInRange = now.getTime() >= start.getTime() && now.getTime() <= end.getTime();
 
-  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה מתאריך שמירת התוכנית ומהשדות שמילאת למעלה. שדה ריק לא מקבל נקודת דרך. התאריך לכל נקודת דרך אישית הוא הצעה שאפשר לכוונן בכל שורה למטה — לא עובדה קבועה, בשונה משני חלונות ההערכה.</p></div>
+  return <section className="personalGantt"><div className="sectionHead compact"><div><span className="kicker">לוח הזמנים שלך</span><h3>הגאנט האישי שנגזר מהתוכנית</h3></div><p>נבנה ממסגרת הזמן שכתבת ומהשדות שמילאת למעלה. שדה ריק לא מקבל נקודת דרך. נקודות הדרך האישיות ממוקמות בתוך מסגרת הזמן שלך, והתאריך של כל אחת הוא הצעה שאפשר לכוונן בכל שורה למטה — לא עובדה קבועה, בשונה משני חלונות ההערכה.</p></div>
     {/* role="img": a bare div's implicit role is "generic", which does not
         permit aria-label at all (axe: aria-prohibited-attr) — a screen
         reader has no obligation to announce it. This is a compound visual
         graphic described as one whole, which is exactly what role="img" is for. */}
-    <div className="ganttTrack" role="img" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}${cadence ? `, קצב מפגשים שזוהה: ${cadence.label}` : ''}`}>
+    <div className="ganttTrack" role="img" aria-label={`ציר זמן מ־${fmt(start)} עד ${fmt(end)}${planWindow ? `, מסגרת הזמן שלך: ${fmt(planWindow.start)} עד ${fmt(planWindow.end)}` : ''}${cadence ? `, קצב מפגשים שזוהה: ${cadence.label}` : ''}`}>
       <div className="ganttBar">
         {cadence && <div className="ganttCadence" aria-hidden="true" />}
-        {bands.map((m) => <div key={m.kind} className="ganttBand" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} />)}
+        {bands.map((m) => <div key={m.kind} className={m.kind === 'planWindow' ? 'ganttBand planWindowBand' : 'ganttBand'} aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%`, width: `${Math.max(2, timelinePercent(m.rangeEnd!, start, end) - timelinePercent(m.date, start, end))}%` }} />)}
         {marks.map((m) => <span key={m.kind} className="ganttMark" aria-hidden="true" style={{ right: `${timelinePercent(m.date, start, end)}%` }} />)}
         {/* Pinning "today" to an edge when it's actually outside [start,end] (an old plan viewed much later, say) would misreport where today really is — so it only renders inside the range it can honestly represent. */}
         {todayInRange && <div className="ganttToday" aria-hidden="true" style={{ right: `${todayPct}%` }}><i aria-hidden="true" /><b>היום</b></div>}
       </div>
       <div className="ganttAxis" aria-hidden="true"><span>{fmt(start)}</span><span>{fmt(end)}</span></div>
     </div>
+    {!planWindow && <p className="ganttCadenceNote">לא זוהו חודשים ב"מסגרת זמן" למעלה, אז נקודות הדרך ממוקמות על פני שנת התוכנית כולה. אם תכתבי שם טווח חודשים — למשל <strong>"ספטמבר–ינואר"</strong> — הן ימוקמו בתוכו.</p>}
     {cadence && <p className="ganttCadenceNote">זוהה קצב מפגשים — <strong>{cadence.label}</strong> — מתוך "מסגרת זמן" למעלה. אם זה לא מדויק, אפשר פשוט להתעלם; שום דבר לא נשמר בגלל זה.</p>}
     <ul className="ganttLegend">{milestones.map((m) => {
-      const row = <span className="ganttLegendRow"><b aria-hidden="true" className={m.rangeEnd ? 'ganttDot band' : 'ganttDot'} /><span><strong>{m.label}</strong> · {fmt(m.date)}{m.rangeEnd ? `–${fmt(m.rangeEnd)}` : ''}</span><small>{m.detail}</small></span>;
+      const row = <span className="ganttLegendRow"><b aria-hidden="true" className={m.kind === 'planWindow' ? 'ganttDot window' : m.rangeEnd ? 'ganttDot band' : 'ganttDot'} /><span><strong>{m.label}</strong> · {fmt(m.date)}{m.rangeEnd ? `–${fmt(m.rangeEnd)}` : ''}</span><small>{m.detail}</small></span>;
       if (!m.adjustable) return <li key={m.kind}>{row}</li>;
       const adjustable = m.adjustable;
       return <li key={m.kind}><details className="ganttLegendAdjust"><summary>{row}</summary>

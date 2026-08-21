@@ -455,3 +455,47 @@ Every presence check in `scoreDimensions` tested raw truthiness. `{plan.flexibil
 Both follow from the same choice — a fixed denominator over *all* the instrument's inputs — and both would be resolved by scoring each dimension over the inputs her route actually asks for, showing a dimension whose evidence her route never collects as **"לא נמדד במסלול הזה"** rather than as a low score, and keeping it out of "the gap worth checking" since it is a gap in what she was asked, not in her practice. That is a decision about what the short route means pedagogically, so it is written down here rather than chosen unilaterally.
 
 **Suite after this pass: 163 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**
+
+## The personal Gantt was a template with her text pasted in — fixed 2026-08-21
+
+Raised directly: *"זה עדיין לא מייצר גאנט בהתאמה אישית."* Measured before changing anything, and the measurement was unambiguous. Four completely different answers in the one field that states when her work happens:
+
+| מה שהיא כתבה ב"מסגרת זמן" | הציר שהוצג | צעד קטן ראשון | שיחת מנהלים | בדיקת גמישות |
+|---|---|---|---|---|
+| ספטמבר–ינואר | 15 באוג׳ → 30 ביוני | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+| אוקטובר–דצמבר | 15 באוג׳ → 30 ביוני | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+| לאורך כל השנה | 15 באוג׳ → 30 ביוני | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+| נתחיל אחרי החגים | 15 באוג׳ → 30 ביוני | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+
+Byte-identical. What was actually personal was *which* milestones appeared (gated on the matching field being non-empty), the detail text under each, and the cadence label. The **dates** were fixed proportions — 6%, 12% and 50% — of a span that never changed, because the axis always ran from her save date to 30 June regardless of what she wrote. `plan.timeframe` was read only through `lib/cadence.ts`, which pulls out a cadence phrase and discards the months.
+
+The visible consequence: a מדריכה who wrote "אוקטובר–דצמבר" was shown her first small step on **3 September** — before her own plan begins.
+
+### What changed
+
+`lib/plan-window.ts` reads a month range out of the same free text, in the same discipline as `cadence.ts`: whole-token matching, one Hebrew prefix peeled at most (the bounded peel is the lesson from `concrete-anchor.ts`, where greedy stripping turned העשרה into עשרה), months ordered by the **school year** rather than the calendar so "ספטמבר–ינואר" reads forwards rather than as a ten-month jump backwards, and `null` whenever the text does not name two months in a readable order.
+
+Two mentions are required on purpose. A single month is genuinely ambiguous in this field — "נתחיל בספטמבר", "עד ספטמבר" and "בספטמבר נעשה סיכום" are a start, an end and a checkpoint, and only the preposition tells them apart. Guessing there would misplace *every* personal milestone, since they are all positioned inside whatever it returns.
+
+`buildPersonalGantt` now draws that period as its own band and anchors the three personal milestones inside it — never earlier than the save itself, so a "first small step" is never dated before the plan it belongs to was written. The two evaluation windows stay exactly where they were: they are organizational facts, not hers. A period that closed before she saved is dropped rather than drawn behind her, for the same reason a formative window that closed before the start already was.
+
+Same four inputs, after:
+
+| מה שהיא כתבה | מסגרת הזמן שלה | צעד קטן ראשון | שיחת מנהלים | בדיקת גמישות |
+|---|---|---|---|---|
+| ספטמבר–ינואר | 1 בספט׳–31 בינו׳ | 10 בספט׳ | 19 בספט׳ | 17 בנוב׳ |
+| אוקטובר–דצמבר | 1 באוק׳–31 בדצמ׳ | 8 באוק׳ | 12 באוק׳ | 16 בנוב׳ |
+| לאורך כל השנה | *(no months named)* | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+| נתחיל אחרי החגים | *(no months named)* | 3 בספט׳ | 14 בספט׳ | 22 בינו׳ |
+
+The last two fall back to the previous behaviour silently, which is the honest answer when she named no period — and the chart now says so, and says what to write to change it: *"לא זוהו חודשים ב'מסגרת זמן' למעלה… אם תכתבי שם טווח חודשים — למשל 'ספטמבר–ינואר' — הן ימוקמו בתוכו."*
+
+Her period is drawn as a dashed outline rather than a fourth filled band: it usually **contains** the evaluation windows, and a fourth hue was already rejected on contrast grounds in an earlier round.
+
+### Verified
+
+Confirmed in a browser at three timeframes, not only in tests — the band renders, the three dots sit inside it, and the axis label announces her period to a screen reader. The regression tests fail against the old anchoring (`two different timeframes produce two different Gantts`, `every personal milestone falls inside the period she described`), checked by reverting it.
+
+Mutation over both modules: 20/24 killed, and the four survivors are provable equivalents (two unreachable NaN guards, a `null`/`undefined` difference behind a `??`, and a millisecond-wide boundary). The July mutants were real and are now killed — `schoolYearPair`'s boundary month is when the pilot's planning window *opens*, so a plan saved on 3 July is the ordinary case and was untested; getting it wrong dates every milestone a full year early.
+
+**Suite after this pass: 182 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**
