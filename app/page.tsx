@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   analyzeInteraction, canOpenStage, emptyState, fieldHoursPercent, FormativeAnswers, formativeCompletion, formativeStarted,
   hasLargeGoalResultGap, implementationStatus, managerMeetingPercent, MatiState, planSaved, recommendedActions,
@@ -11,6 +11,15 @@ import { LEGACY_KEY, loadStoredState, STORAGE_KEY } from '../lib/state-storage';
 
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 const shortIds = new Set<keyof FormativeAnswers>(['q1', 'q2', 'q5', 'q8', 'q9']);
+// The plan gate, spelled out per field, so a rejected save can name what is actually
+// missing and which part of the work session holds it instead of listing everything.
+const planRequirements = [
+  { key: 'audience', label: 'מי צוותי המוקד', part: 1 },
+  { key: 'smartGoal', label: 'מטרת SMART', part: 1 },
+  { key: 'metric1', label: 'מדד הצלחה 1', part: 2 },
+  { key: 'metric2', label: 'מדד הצלחה 2', part: 2 },
+  { key: 'timeframe', label: 'מסגרת זמן גסה', part: 3 },
+] as const;
 
 function Stars({ score }: { score: number }) { return <span className="stars" aria-label={`${score} מתוך 5`}>{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>; }
 
@@ -18,6 +27,8 @@ export default function Home() {
   const [state, setState] = useState<MatiState>(emptyState);
   const [hydrated, setHydrated] = useState(false);
   const [notice, setNotice] = useState('');
+  const [noticeSeq, setNoticeSeq] = useState(0);
+  const noticeRef = useRef<HTMLDivElement>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const autoStage = stageFromDate();
   const activeStage = state.manualStage ?? autoStage;
@@ -31,13 +42,18 @@ export default function Home() {
     setHydrated(true);
   }, []);
   useEffect(() => { if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state, hydrated]);
+  // A notice raised by a click renders above the workspace, which can be far off screen
+  // from the button that raised it. Without this the click looks like it did nothing.
+  useEffect(() => { if (noticeSeq) noticeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [noticeSeq]);
+
+  function raiseNotice(text: string) { setNotice(text); setNoticeSeq((seq) => seq + 1); }
 
   function addHistory(stage: Stage, label: string, note: string) {
     setState((prev) => ({ ...prev, history: [...prev.history.slice(-11), { at: new Date().toISOString(), stage, label, note }] }));
   }
   function switchStage(stage: Stage) {
     if (!canOpenStage(stage, state)) {
-      setNotice(stage === 2 ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה שמורה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן. בואי נשלים את הבסיס בקצרה.' : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת. גם מענה חלקי מספיק כדי ליצור בסיס.');
+      raiseNotice(stage === 2 ? 'כדי לעבור להערכה המעצבת, צריך קודם תוכנית עבודה שמורה עם קהל יעד, מטרת SMART, שני מדדים ומסגרת זמן. בואי נשלים את הבסיס בקצרה.' : 'כדי לעבור להערכה המסכמת, צריך קודם למלא לפחות חלק מההערכה המעצבת. גם מענה חלקי מספיק כדי ליצור בסיס.');
       return;
     }
     setNotice(''); setShowAnalysis(false); setState((prev) => ({ ...prev, manualStage: stage }));
@@ -48,19 +64,25 @@ export default function Home() {
   function updatePost(key: keyof MatiState['formative']['post'], value: string) { setState((s) => ({ ...s, formative: { ...s.formative, post: { ...s.formative.post, [key]: value } } })); }
 
   function savePlan() {
-    if (!state.plan.audience.trim() || !state.plan.metric1.trim() || !state.plan.metric2.trim() || !state.plan.timeframe.trim()) { setNotice('כדי שנוכל לבנות תוכנית שתעבוד בשטח, חסרים קהל יעד, שני מדדי הצלחה או מסגרת זמן. השלימי רק את החלקים החסרים.'); return; }
-    if (!smartGoalLooksValid(state.plan.smartGoal)) { setNotice('כדי להשלים את מטרת התוכנית, כתבי במשפט אחד מה אמור להשתנות אצל צוותי המוקד. את המדדים ומסגרת הזמן נבדוק בשדות הייעודיים.'); return; }
+    const missing = planRequirements.filter((requirement) => !state.plan[requirement.key].trim());
+    if (missing.length) {
+      const parts = [...new Set(missing.map((requirement) => requirement.part))];
+      const where = parts.length > 1 ? `בחלקים ${parts.join(' ו־')} מתוך 3` : `בחלק ${parts[0]} מתוך 3`;
+      raiseNotice(`כדי לשמור את התוכנית חסר עוד: ${missing.map((requirement) => requirement.label).join(', ')} — ${where}. אפשר לחזור לשם עם «הקודם» למעלה. מה שכבר מילאת נשמר.`);
+      return;
+    }
+    if (!smartGoalLooksValid(state.plan.smartGoal)) { raiseNotice('כדי להשלים את מטרת התוכנית, כתבי במשפט אחד מה אמור להשתנות אצל צוותי המוקד. את המדדים ומסגרת הזמן נבדוק בשדות הייעודיים.'); return; }
     const stamp = new Date().toISOString();
     setState((prev) => ({ ...prev, plan: { ...prev.plan, savedAt: stamp }, history: [...prev.history.slice(-11), { at: stamp, stage: 1, label: 'תוכנית עבודה נשמרה', note: prev.plan.smartGoal }] }));
-    setNotice('התוכנית נשמרה. עכשיו אפשר להשתמש במראה כדי לבדוק איפה התכנון כבר חזק ואיפה עוד חסרה ראיה או בעלות ברורה.');
+    raiseNotice('התוכנית נשמרה. עכשיו אפשר להשתמש במראה כדי לבדוק איפה התכנון כבר חזק ואיפה עוד חסרה ראיה או בעלות ברורה.');
   }
 
   function saveFormative() {
-    if (!formativeStarted(state.formative)) { setNotice('בחרי לפחות סעיף אחד לענות עליו. גם מענה חלקי הוא בעל ערך ויכול להספיק לעצירה מקצועית ראשונה.'); return; }
+    if (!formativeStarted(state.formative)) { raiseNotice('בחרי לפחות סעיף אחד לענות עליו. גם מענה חלקי הוא בעל ערך ויכול להספיק לעצירה מקצועית ראשונה.'); return; }
     const stamp = new Date().toISOString(); const note = state.formative.post.oneThing || `מימוש משוער: ${implementationStatus(state) ?? 'לא נמדד'}%`;
     setState((prev) => ({ ...prev, formative: { ...prev.formative, savedAt: stamp }, history: [...prev.history.slice(-11), { at: stamp, stage: 2, label: 'הערכה מעצבת נשמרה', note }] }));
     setShowAnalysis(true);
-    setNotice(hasLargeGoalResultGap(state) ? 'אני רואה פער גדול בין המטרות לתוצאות. זו הזדמנות לחשוב אחרת: התמונה המקצועית למטה מסמנת איפה כדאי לשנות מנגנון, לא רק להוסיף מאמץ.' : 'הרפלקציה נשמרה. התמונה המקצועית למטה מבוססת על הנתונים שהזנת — לא על ניחוש.');
+    raiseNotice(hasLargeGoalResultGap(state) ? 'אני רואה פער גדול בין המטרות לתוצאות. זו הזדמנות לחשוב אחרת: התמונה המקצועית למטה מסמנת איפה כדאי לשנות מנגנון, לא רק להוסיף מאמץ.' : 'הרפלקציה נשמרה. התמונה המקצועית למטה מבוססת על הנתונים שהזנת — לא על ניחוש.');
   }
 
   if (!activeStage) return <main className="shell gapShell"><section className="gapCard"><p className="eyebrow">מתי המתי״א</p><h1>באיזה שלב בלוח השנה את נמצאת?</h1><p>התאריך הנוכחי נמצא בין חלונות הגאנט שהוגדרו. כדי לא להמציא שלב, בחרי את נקודת העבודה המתאימה.</p><div className="gapOptions"><button onClick={() => switchStage(1)}><b>תכנון</b><span>עד סוף ספטמבר</span></button><button onClick={() => switchStage(2)}><b>הערכה מעצבת</b><span>דצמבר–פברואר</span></button><button onClick={() => switchStage(3)}><b>הערכה מסכמת</b><span>מאי–יוני</span></button></div>{notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}</section></main>;
@@ -73,7 +95,7 @@ export default function Home() {
       <div className="welcomeBlock"><p className="eyebrow">מתי המתי״א</p><h1>{instructor ? `שלום ${instructor}, ` : 'שלום, '}כאן עוצרות כדי לראות מה באמת זז.</h1><p className="lead">את נמצאת בשלב <strong>{stageNames[activeStage]}</strong>. המטרה כאן היא להפוך את העבודה המקצועית לראיות, החלטות וצעדים שאפשר לקחת חזרה לשטח.</p><div className="autosave"><span className="autosaveDot" /> הטיוטה נשמרת אוטומטית</div></div>
       <nav className="stageStrip" aria-label="שלבי העבודה לאורך השנה">{([1, 2, 3] as Stage[]).map((stage) => { const locked = !canOpenStage(stage, state); const completed = stage === 1 ? planSaved(state) : stage === 2 ? Boolean(state.formative.savedAt) : Boolean(state.summative.savedAt); return <button key={stage} onClick={() => switchStage(stage)} className={`stage ${activeStage === stage ? 'active' : ''} ${completed ? 'completed' : ''}`} aria-current={activeStage === stage ? 'step' : undefined}><span className="stageNumber" aria-hidden="true">{completed ? '✓' : stage}</span><span className="stageText"><strong>{stageNames[stage]}</strong><small>{locked ? 'ייפתח לאחר השלמת הבסיס' : activeStage === stage ? 'כאן את נמצאת עכשיו' : completed ? 'נשמר' : 'אפשר לעבור'}</small></span>{locked && <span className="lock" aria-hidden="true">🔒</span>}</button>; })}</nav>
     </header>
-    {notice && <div className="notice" role="status"><span aria-hidden="true">i</span><p>{notice}</p></div>}
+    {notice && <div className="notice" role="status" ref={noticeRef}><span aria-hidden="true">i</span><p>{notice}</p></div>}
     <AdaptiveSignal profile={profile} activeStage={activeStage} />
     <section className="workspace" id="main-workspace"><aside className="sideCard"><span className="kicker">נכון לעכשיו</span><h2>{stageNames[activeStage]}</h2><p>{activeStage === autoStage ? 'זה השלב המתאים לפי לוח השנה.' : 'השלב נבחר ידנית לאחר בדיקת תנאי המעבר.'}</p><div className="statusList" aria-label="התקדמות שנתית"><StatusRow done={planSaved(state)} label="תוכנית עבודה שמורה" /><StatusRow done={Boolean(state.formative.savedAt)} label="הערכה מעצבת" /><StatusRow done={Boolean(state.summative.savedAt)} label="סיכום שנתי" /></div>{activeStage === 2 && <ProgressRing value={formativeCompletion(state)} label="מילוי המסלול" />}<div className="sideHint"><strong>לא צריך לסיים הכול עכשיו.</strong><span>אפשר לעצור ולחזור מאותו מכשיר. גם מידע חלקי יכול לשפר החלטה.</span></div></aside>
       <div className="mainCard">{activeStage === 1 && <PlanMode state={state} updatePlan={updatePlan} savePlan={savePlan} dimensions={dimensions} setState={setState} />}{activeStage === 2 && <FormativeMode state={state} updateContext={updateContext} updateAnswer={updateAnswer} updatePost={updatePost} setState={setState} saveFormative={saveFormative} dimensions={dimensions} profile={profile} previousFormative={previousFormative?.note} showAnalysis={showAnalysis || Boolean(state.formative.savedAt)} />}{activeStage === 3 && <SummativeMode state={state} setState={setState} addHistory={addHistory} />}</div></section>

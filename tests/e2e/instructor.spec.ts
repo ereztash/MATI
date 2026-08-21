@@ -85,8 +85,12 @@ test('saving a plan opens stage 2 and records a checkpoint', async ({ page }) =>
   await page.goto('/');
   await nav(page, 'עבודה');
 
-  const show = () => page.evaluate(() =>
-    document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; }));
+  // This test drives the gate directly rather than through the stepper, so it also
+  // has to unpark the save button the work session holds back until the last part.
+  const show = () => page.evaluate(() => {
+    document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; });
+    document.querySelectorAll<HTMLElement>('.view-work .actions > *').forEach((el) => { el.hidden = false; });
+  });
   const fill = async (label: string, value: string) => {
     await show();
     await page.locator('.field', { hasText: label }).locator('input').first().fill(value);
@@ -96,6 +100,7 @@ test('saving a plan opens stage 2 and records a checkpoint', async ({ page }) =>
   await fill('מדד הצלחה 1', savedPlan.metric1);
   await fill('מדד הצלחה 2', savedPlan.metric2);
   await fill('מסגרת זמן גסה', savedPlan.timeframe);
+  await show();
   await page.locator('.view-work .actions .primary').click();
 
   await expect(page.locator('.view-work .notice p')).toContainText('התוכנית נשמרה');
@@ -158,4 +163,57 @@ test('editing a field on a saved plan does not silently re-lock stage 2', async 
   await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
   await page.locator('.stageStrip button').nth(1).click();
   await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
+});
+
+test('stage 1 always offers a workable action, and a refused save names only what is missing', async ({ page }) => {
+  // Regression: the work session hid parts 2–3 but left the gated "save the plan"
+  // button on screen. Filling part 1 and pressing it produced a notice that listed
+  // the target audience she had just filled, pointing at fields she could not see,
+  // and the notice rendered above the workspace so the click looked like a no-op.
+  await seed(page, STORAGE_KEY, { manualStage: 1, history: [] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  const card = page.locator('.view-work .workExperience');
+  const visible = card.locator('.formSection:not([hidden])');
+  const action = card.locator('.actions button:visible');   // the card's one live action
+  await expect(visible).toHaveCount(1);
+  // Wait for the stepper to settle on part 1 before typing: it picks its opening part
+  // from stored state, so filling fields first would move the target under the test.
+  await expect(page.locator('.workSessionMeta span')).toContainText('חלק 1 מתוך 3');
+  await expect(visible).toContainText('למי ומה את רוצה לשנות');
+
+  await visible.locator('input').nth(0).fill('4 בתי ספר, צוותי חינוך מיוחד וצוותי הנהלה');
+  await visible.locator('input').nth(1).fill('חלוקת משאבים מבוססת מיפוי ילדים');
+
+  // The card offers exactly one action, and it is the one that works from here.
+  await expect(action).toHaveCount(1);
+  await expect(action).toContainText('המשיכי לחלק');
+  await action.click();
+
+  await expect(visible).toContainText('איך נדע שההשפעה באמת קרתה');
+  await visible.locator('input').nth(0).fill('תצפיות בכיתה');   // metric 2 stays empty
+  await expect(action).toContainText('המשיכי לחלק');
+  await action.click();
+
+  // Last part: the real save is back, and its refusal names the two open fields only.
+  await expect(visible).toContainText('מה צריך לקרות מסביב');
+  await expect(action).toContainText('אשרי ושמרי את תוכנית העבודה');
+  await action.click();
+
+  const notice = page.locator('.view-work .notice');
+  await expect(notice).toContainText('מדד הצלחה 2');
+  await expect(notice).toContainText('מסגרת זמן גסה');
+  await expect(notice).toContainText('בחלקים 2 ו־3 מתוך 3');
+  await expect(notice).not.toContainText('מי צוותי המוקד');
+
+  await page.locator('.workSessionSecondary').click();
+  await expect(visible).toContainText('איך נדע שההשפעה באמת קרתה');
+  await visible.locator('input').nth(1).fill('משוב מנהלות');
+  await action.click();
+
+  await visible.locator('input').nth(0).fill('ספטמבר–ינואר');
+  await action.click();
+  await expect(notice).toContainText('התוכנית נשמרה');
+  await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
 });

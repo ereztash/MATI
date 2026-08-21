@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FormativeAnswers, MatiState, stage2SectionStarted, stageFromDate, Stage } from '../lib/stages';
 import { readStoredState } from '../lib/state-storage';
 
@@ -8,6 +9,11 @@ const shortIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q5', 'q8', 'q9'];
 const fullIds: Array<keyof FormativeAnswers> = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8', 'q9'];
 const summativeGroupSizes = [2, 1, 1] as const;
 const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
+// Stages whose save button is gated on fields that live in later parts. Showing it
+// mid-session offers an action that can only fail, so it waits for the last part.
+// Stage 2 accepts a partial save, so its button stays reachable throughout.
+const gatedSaveStages = new Set<Stage>([1, 3]);
+const INLINE_ACTION = 'data-work-session-action';
 
 type WorkItem = { elements: HTMLElement[] };
 
@@ -66,6 +72,18 @@ function savedStamp(state: MatiState, stage: Stage) {
   return state.summative.savedAt;
 }
 
+function actionsRow() {
+  return document.querySelector<HTMLElement>('.view-work .workExperience .actions');
+}
+
+function setPageActionsHidden(hidden: boolean) {
+  const row = actionsRow();
+  if (!row) return;
+  Array.from(row.children).forEach((child) => {
+    if (child instanceof HTMLElement && !child.hasAttribute(INLINE_ACTION)) child.hidden = hidden;
+  });
+}
+
 function openInsight() {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.experienceNav button'));
   buttons.find((button) => button.textContent?.includes('מה למדנו'))?.click();
@@ -77,6 +95,7 @@ export default function WorkSessionLayer() {
   const [count, setCount] = useState(0);
   const [title, setTitle] = useState('');
   const [initializedKey, setInitializedKey] = useState('');
+  const [inlineHost, setInlineHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +128,7 @@ export default function WorkSessionLayer() {
       window.removeEventListener('change', sync, true);
       document.documentElement.removeAttribute('data-work-session');
       workItemsFor(stage).flatMap((item) => item.elements).forEach((element) => { element.hidden = false; });
+      setPageActionsHidden(false);
     };
   }, [stage]);
 
@@ -122,6 +142,9 @@ export default function WorkSessionLayer() {
     });
     setCount(candidates.length);
     setTitle(titleFor(candidates[safeIndex], `חלק ${safeIndex + 1}`));
+    const deferSave = gatedSaveStages.has(stage) && safeIndex < candidates.length - 1;
+    setPageActionsHidden(deferSave);
+    setInlineHost(deferSave ? actionsRow() : null);
     candidates[safeIndex].elements[0]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [stage, index, initializedKey]);
 
@@ -148,7 +171,16 @@ export default function WorkSessionLayer() {
 
   if (count <= 1) return null;
 
+  const advance = () => setIndex((value) => Math.min(count - 1, value + 1));
+
   return (
+    <>
+    {inlineHost && createPortal(
+      <button className="workSessionInline" {...{ [INLINE_ACTION]: 'next' }} onClick={advance}>
+        <span>המשיכי לחלק {Math.min(index + 2, count)} מתוך {count}</span><b aria-hidden="true">←</b>
+      </button>,
+      inlineHost,
+    )}
     <section className="workSessionBar" aria-label="התקדמות בסשן העבודה">
       <div className="workSessionMeta">
         <span>{stageNames[stage]} · חלק {index + 1} מתוך {count}</span>
@@ -164,5 +196,6 @@ export default function WorkSessionLayer() {
         )}
       </div>
     </section>
+    </>
   );
 }
