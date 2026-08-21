@@ -38,7 +38,14 @@ export default function StagePicker({ state, notice = '', onChoose }: {
         <button
           key={stage}
           onClick={() => onChoose(stage)}
-          aria-disabled={!canOpenStage(stage, state)}
+          /* Dimmed by a class, NOT aria-disabled. These buttons exist to be
+             clicked: `onChoose` gates on canOpenStage and renders the reason in
+             `.gapNotice`, so telling assistive tech the control is inert
+             announces the opposite of what it does — and stops a keyboard or
+             screen-reader user from ever reaching the explanation. Same finding
+             as N2 on the stage strip (main, a09a2c6), which is the same
+             pattern one component over. */
+          className={canOpenStage(stage, state) ? undefined : 'lockedChoice'}
         >
           <b>{stageNames[stage]}</b>
           <span>{stageWindowLabel(stage)}</span>

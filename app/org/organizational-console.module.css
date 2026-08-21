@@ -14,7 +14,7 @@
 .hero p,.sectionHead p,.intake p,.empty p,.privacyBlock p,.patternCard p,.footer,.limit p { color:#667570;line-height:1.7; }
 .back { display:inline-block;margin-bottom:28px;margin-inline-end:14px;color:#315d72;text-decoration:none;font-weight:800;border-radius:8px; }
 .back:hover { text-decoration:underline;text-underline-offset:4px; }
-.back:focus-visible,.upload:focus-within,.secondary:focus-visible { outline:3px solid rgba(66,111,134,.3);outline-offset:3px; }
+.back:focus-visible,.upload:focus-within,.secondary:focus-visible { outline:3px solid #315d72;outline-offset:3px; }
 
 .intake {
   display:grid;grid-template-columns:1fr auto;align-items:center;gap:24px;

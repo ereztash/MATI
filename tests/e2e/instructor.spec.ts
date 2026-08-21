@@ -130,18 +130,59 @@ test('saving a plan opens stage 2 and records a checkpoint', async ({ page }) =>
 test('stage 2 stays locked until a plan is actually saved', async ({ page }) => {
   await page.goto('/');
   await nav(page, 'עבודה');
-  // force is right here and not a smell: a locked stage carries aria-disabled
-  // rather than the disabled attribute precisely so it stays clickable and can
-  // say what is missing. Playwright's actionability check refuses aria-disabled
-  // elements; a real mouse is not so principled. Whether the button is
-  // physically reachable at all is a separate question, tested below.
-  await page.locator('.stageStrip button').nth(1).click({ force: true });
+  // No force, and no aria-disabled to force past. A locked stage button exists
+  // precisely so it can be clicked and explain what is missing, and
+  // aria-disabled told assistive tech the opposite — removed on main in
+  // a09a2c6 (finding N2). A plain click now exercises the real thing, which
+  // also means this test would notice if the button became unreachable.
+  await page.locator('.stageStrip button').nth(1).click();
   await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
   await expect(page.locator('.view-work .assessmentSection')).toHaveCount(0);
 });
 
+test('editing a field on a saved plan does not silently re-lock stage 2', async ({ page }) => {
+  // Regression (finding 8 on main, a09a2c6): every plan/context/answer updater
+  // cleared savedAt on each keystroke, so fixing a typo in an already-saved
+  // plan re-locked stage 2 with no indication why — and, on this branch, made
+  // the personal Gantt vanish mid-sentence, since it renders only behind
+  // planSaved(). planReady still gates a genuinely incomplete field.
+  await seed(page, STORAGE_KEY, { plan: savedPlan, history: [] });
+  await page.goto('/');
+  await nav(page, 'עבודה');
+
+  // WorkSessionLayer computes its initial section asynchronously: for an
+  // already-complete plan it starts at index 0 and then jumps to the last
+  // section a beat later, re-hiding whatever was force-unhidden in between.
+  // toPass() re-applies the unhide until a fill actually sticks.
+  const audienceField = page.locator('.field', { hasText: 'מי צוותי המוקד' }).locator('input').first();
+  await expect(async () => {
+    await page.evaluate(() =>
+      document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; }));
+    await audienceField.fill(`${savedPlan.audience} (תוקן)`, { timeout: 500 });
+  }).toPass({ timeout: 5000 });
+  await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
+
+  await page.locator('.stageStrip button').nth(1).click();
+  await expect(page.locator('.view-work .sectionHead .kicker').first()).toHaveText('שלב 2 · הערכה מעצבת');
+
+  // Emptying a required field must still close the gate — this is not a blanket
+  // "never re-lock", only "don't re-lock just because something was typed".
+  await nav(page, 'עבודה');
+  await page.locator('.stageStrip button').first().click();
+  await expect(async () => {
+    await page.evaluate(() =>
+      document.querySelectorAll<HTMLElement>('.view-work .formSection').forEach((el) => { el.hidden = false; }));
+    await audienceField.fill('', { timeout: 500 });
+  }).toPass({ timeout: 5000 });
+  await expect.poll(async () => (await readStored(page)).plan?.audience).toBe('');
+  await expect.poll(async () => Boolean((await readStored(page)).plan?.savedAt)).toBe(true);
+  await page.locator('.stageStrip button').nth(1).click();
+  await expect(page.locator('.view-work .notice p')).toContainText('צריך קודם תוכנית עבודה שמורה');
+});
+
 test('the work-session bar does not cover the stage strip', async ({ page }) => {
-  // Regression, and the reason the test above is allowed to use force. The
+  // Physical reachability, which is a separate question from the a11y one the
+  // test above now covers with a plain click. The
   // sticky .workSessionBar is rendered before the header in the DOM, so the
   // header scrolled underneath it: measured on desktop and on a Pixel 7,
   // elementFromPoint at the centre of all three stage buttons returned the bar
@@ -333,8 +374,10 @@ test('the home screen asks which stage you are in during a calendar gap, instead
   // assert it was accepted — codifying the bug it was written next to. The
   // picker wrote manualStage with no canOpenStage check, so it could put a
   // first-time user on the summative screen over an empty plan while the stage
-  // strip rendered that same stage as aria-current AND aria-disabled at once.
-  await page.locator('.gapOptions button', { hasText: 'הערכה מעצבת' }).click({ force: true });
+  // strip rendered that same stage as aria-current AND locked at once. The
+  // button is dimmed by a class rather than aria-disabled, so no force is
+  // needed to click it and a keyboard user can reach the explanation too.
+  await page.locator('.gapOptions button', { hasText: 'הערכה מעצבת' }).click();
   await expect(page.locator('.gapNotice')).toContainText('צריך קודם תוכנית עבודה שמורה');
   await expect(page.locator('h1')).toHaveText('באיזה שלב בלוח השנה את נמצאת?');
   expect(await readStored(page)).not.toHaveProperty('gapStage');
