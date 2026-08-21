@@ -499,3 +499,47 @@ Confirmed in a browser at three timeframes, not only in tests — the band rende
 Mutation over both modules: 20/24 killed, and the four survivors are provable equivalents (two unreachable NaN guards, a `null`/`undefined` difference behind a `??`, and a millisecond-wide boundary). The July mutants were real and are now killed — `schoolYearPair`'s boundary month is when the pilot's planning window *opens*, so a plan saved on 3 July is the ordinary case and was untested; getting it wrong dates every milestone a full year early.
 
 **Suite after this pass: 182 unit tests, 25 e2e tests, four contract checks in CI, chaos green, readiness unchanged at 6/8.**
+
+## Re-reviewing the Gantt fix — twelve findings, one of them a regression I had just introduced, 2026-08-21
+
+All twelve reproduced against the running library or a browser before anything changed. Six were behavioural, six were duplication, dead code or stale comments.
+
+### The fix contradicted its own new copy
+
+The three personal offsets carry day floors — at least a week before the first small step, ten days before the manager conversation — so a suggestion is never the same day as the save. Those floors won outright over the window. Re-saving a plan on **28 January** whose stated period closes on **31 January** produced 4 February and 7 February: marks sitting visibly outside the dashed band, directly under the sentence *"נקודות הדרך האישיות ממוקמות בתוך מסגרת הזמן שלך"* that the same commit added. Suggestions are clamped into the period they are a suggestion about now — when there is less runway left than the floor asks for, the honest answer is the end of the window, not a date past it.
+
+### A regression from the same commit, found by the review rather than by me
+
+The two evaluation windows are skipped when they closed before the timeline begins — to avoid drawing a fabricated sliver clamped to 0%. That guard compared against `start`, which *was* `savedAt` until this commit let her stated period open the axis earlier. I changed the comparison to `savedAt` while moving the code, and left the comment explaining the old rationale untouched.
+
+Measured: timeframe "ספטמבר–יוני" re-saved on 10 May draws an axis from **1 September**, and the formative window (Dec–Feb) sits entirely inside it — no clamping, no sliver, legend dates on-axis — and was dropped anyway. An organizational fact silently missing from a chart that displays it perfectly well.
+
+### Copy that was false in two different ways
+
+The section header said *"נבנה ממסגרת הזמן שכתבת… נקודות הדרך האישיות ממוקמות בתוך מסגרת הזמן שלך"* **unconditionally**, including when no window was detected — where it was contradicted by the fallback note two elements below it, on the same screen.
+
+And that fallback note said *"לא זוהו חודשים"* to someone who had written months. A period that already closed is dropped, and the only thing exposed to the view was "no window", so "ספטמבר–נובמבר" saved in March told her to write a month range she had already written, for a reason that was not the real one. `buildPersonalGantt` now reports **why**: `used` / `closed` / `none`, and the closed case says her period is over and suggests updating the field rather than filling it in.
+
+### A latent test breakage
+
+Both fallback notes reused `.ganttCadenceNote`, and `planWindow === null` with a detected cadence renders both — so `tests/e2e/instructor.spec.ts`'s unscoped `.ganttCadenceNote` locator would have thrown a Playwright strict-mode violation ("resolved to 2 elements") the first time a seed hit that combination. The window notes have their own class now, and the two are mutually exclusive by construction.
+
+### Two copies of the same thing, and the gap that proved it matters
+
+`schoolYearPair` was copy-pasted between `plan-timeline.ts` and the new `plan-window.ts`; if the boundary ever moved in one, her months would anchor to one year and the evaluation windows to another, every milestone a year off, with nothing failing because each file's tests only exercised its own copy. It lives in `lib/school-year.ts` now.
+
+`normalize` was duplicated between `cadence.ts` and `plan-window.ts` — the two readers of the *same field*, which must therefore split the same text the same way. Both private copies omitted the Hebrew maqaf **־**, a character this codebase emits itself in the Gantt's own aria-label, so "ספטמבר־ינואר, אחת לשבועיים" would have shown a cadence and no window. Shared in `lib/hebrew-text.ts`, with the maqaf added once, and a test that reads that exact string.
+
+### Also
+
+A `Math.max` that could never take its second branch (`extractPlanWindow` anchors both months to the save's school year, so the latest window it can return closes on the same 30 June `programYearEnd` does), a module docstring still claiming the axis starts at `savedAt`, a `rangeEnd` doc still claiming only the two fixed windows carry it, a `label` doc claiming "as written" for a canonical spelling, and two separate `m.kind === 'planWindow'` checks in JSX picking a style — now a `band: 'filled' | 'outline'` on the milestone itself.
+
+### Two tests that could not fail
+
+*"start is exactly plan.savedAt"* stopped being true the moment her period could open the axis, and kept passing: the default fixture pairs "ספטמבר–ינואר" with an August save, where the save happens to be the earlier of the two. Change the fixture to "יולי–ינואר" — an equally ordinary answer, since the planning window opens in July — and it is false. Renamed for the rule it actually tests, and given all three cases.
+
+*"every personal milestone falls inside the period she described"* used one early save inside a 92-day window, which is the case where every offset lands inside no matter what the code does. It runs four saves now, including the late ones that break the property.
+
+Mutation then found a third gap neither the review nor I had named: only the **floors** were pinned, never the **proportions**. The proportional part could be removed entirely and the suite stayed green — collapsing "בדיקת גמישות" from mid-course into the first week beside the other two. Now asserted as a share of her period rather than as a date.
+
+**After this pass: 187 unit tests, 25 e2e tests, four contract checks in CI, chaos green, 23/25 mutants killed across the Gantt modules — both survivors provable equivalents (an unreachable NaN guard, and a millisecond-wide boundary).**

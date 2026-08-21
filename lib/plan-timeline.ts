@@ -2,6 +2,7 @@ import type { MatiState, Plan } from './stages';
 import { planSaved } from './stages';
 import { extractCadenceDays, cadenceLabel } from './cadence';
 import { extractPlanWindow, PlanWindow } from './plan-window';
+import { schoolYearPair } from './school-year';
 
 /**
  * Personalized Gantt derived from a saved Stage 1 plan.
@@ -43,8 +44,16 @@ export type TimelineMilestone = {
   label: string;
   detail: string;
   date: Date;
-  /** Present only for the two fixed calendar windows, which are ranges rather than points. */
+  /** Present on every range rather than point: the two fixed calendar windows, and her own stated period. */
   rangeEnd?: Date;
+  /**
+   * How a range is drawn. Her period usually CONTAINS the evaluation windows,
+   * so it reads as an outline around them rather than a fourth fill — a fourth
+   * hue having already been rejected on contrast grounds. Carried here rather
+   * than re-derived from `kind` in the view, which had to special-case it in
+   * two separate places (the bar and the legend key).
+   */
+  band?: 'filled' | 'outline';
   /** Present only for the three personal point-milestones — the fixed windows are not adjustable. */
   adjustable?: { defaultDate: Date; overrideKey: PersonalMilestoneOverrideKey; adjusted: boolean };
 };
@@ -59,7 +68,12 @@ export type PersonalGantt = {
   cadence: GanttCadence | null;
   /** The period she described in `timeframe`, when it named one she could be held to. */
   planWindow: PlanWindow | null;
+  /** Why `planWindow` is or is not set — the two null cases need different copy. */
+  planWindowStatus: PlanWindowStatus;
 };
+
+/** 'used' — her months drive the chart. 'closed' — she named months, but that period is over. 'none' — she named none. */
+export type PlanWindowStatus = 'used' | 'closed' | 'none';
 
 const DAY_MS = 86_400_000;
 
@@ -104,17 +118,6 @@ function lastDayOfFebruary(year: number) {
   return new Date(year, 2, 0).getDate();
 }
 
-/**
- * The school-year pair a date belongs to, matching the fixed Gantt windows
- * used across the app: stage 1 opens Jul-Sep of `first`, stage 2 spans
- * Dec `first`–Feb `second`, stage 3 spans May–Jun `second`.
- */
-function schoolYearPair(date: Date) {
-  const month = date.getMonth(); // 0-indexed; 6 = July
-  const first = month >= 6 ? date.getFullYear() : date.getFullYear() - 1;
-  return { first, second: first + 1 };
-}
-
 function programYearEnd(start: Date) {
   const { second } = schoolYearPair(start);
   return new Date(second, 5, 30, 23, 59, 59, 999); // Jun 30
@@ -136,17 +139,20 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
   if (Number.isNaN(savedAt.getTime())) return null;
 
   // Her own stated period, when `timeframe` names one. A window that already
-  // closed before she saved describes a period that is over — the same reason
-  // a formative window that closed before `start` is omitted below — so it is
-  // dropped rather than drawn behind her.
+  // closed before she saved describes a period that is over, so it is dropped
+  // rather than drawn behind her — but WHY it was dropped is reported, because
+  // "you named no months" and "the months you named are behind us" need
+  // different things said back to her.
   const stated = extractPlanWindow(state.plan.timeframe, savedAt);
   const planWindow = stated && stated.end.getTime() >= savedAt.getTime() ? stated : null;
+  const planWindowStatus: PlanWindowStatus = planWindow ? 'used' : stated ? 'closed' : 'none';
 
-  // The axis has to contain everything drawn on it: her period may open before
-  // she wrote the plan down, and the fixed evaluation windows run to the end of
-  // the program year whatever she wrote.
+  // The axis has to contain everything drawn on it, and her period may open
+  // before she wrote the plan down. It cannot END later: extractPlanWindow
+  // anchors both months to the school year of the save, so the latest window it
+  // can return closes on the same 30 June that programYearEnd does.
   const start = planWindow ? new Date(Math.min(savedAt.getTime(), planWindow.start.getTime())) : savedAt;
-  const end = new Date(Math.max(programYearEnd(savedAt).getTime(), planWindow?.end.getTime() ?? 0));
+  const end = programYearEnd(savedAt);
 
   // Personal milestones are placed inside HER period, not inside the program
   // year. Anchored no earlier than the save itself, so a "first small step" is
@@ -154,6 +160,20 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
   const anchorStart = planWindow ? new Date(Math.max(planWindow.start.getTime(), savedAt.getTime())) : savedAt;
   const anchorEnd = planWindow ? planWindow.end : programYearEnd(savedAt);
   const totalDays = Math.max(1, daysBetween(anchorStart, anchorEnd));
+
+  /**
+   * A suggested date, kept inside the period it is a suggestion about.
+   *
+   * The offsets carry a floor — at least a week for the first small step, ten
+   * days before the manager conversation — so a suggestion is never the same
+   * day as the save. Those floors used to win outright: re-saving a plan on 28
+   * January whose window closes on 31 January produced 4 February and 7
+   * February, marks sitting visibly outside the dashed band while the copy
+   * above them promised the opposite. When there is less runway left than the
+   * floor asks for, the honest answer is the end of the window, not a date past
+   * it.
+   */
+  const within = (date: Date) => new Date(Math.min(Math.max(date.getTime(), anchorStart.getTime()), anchorEnd.getTime()));
   const milestones: TimelineMilestone[] = [];
 
   if (planWindow) {
@@ -163,11 +183,12 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
       detail: state.plan.timeframe.trim(),
       date: planWindow.start,
       rangeEnd: planWindow.end,
+      band: 'outline',
     });
   }
 
   if (state.plan.nextSmallStep.trim()) {
-    const defaultDate = addDays(anchorStart, clamp(totalDays * 0.06, 7, 21));
+    const defaultDate = within(addDays(anchorStart, clamp(totalDays * 0.06, 7, 21)));
     const override = overrideDate(state.plan.smallStepDate);
     milestones.push({
       kind: 'smallStep',
@@ -178,7 +199,7 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
     });
   }
   if (state.plan.managers.trim()) {
-    const defaultDate = addDays(anchorStart, clamp(totalDays * 0.12, 10, 30));
+    const defaultDate = within(addDays(anchorStart, clamp(totalDays * 0.12, 10, 30)));
     const override = overrideDate(state.plan.managerTouchDate);
     milestones.push({
       kind: 'managerTouch',
@@ -189,7 +210,7 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
     });
   }
   if (state.plan.flexibility.trim()) {
-    const defaultDate = addDays(anchorStart, totalDays * 0.5);
+    const defaultDate = within(addDays(anchorStart, totalDays * 0.5));
     const override = overrideDate(state.plan.flexibilityCheckDate);
     milestones.push({
       kind: 'flexibilityCheck',
@@ -200,19 +221,23 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
     });
   }
 
-  // A plan (re-)saved after February — e.g. Stage 1 reopened manually during
-  // the March–April calendar gap — belongs to a school year whose formative
-  // window already closed before `start`. Showing it anyway would clamp both
-  // ends to 0% and render a fabricated sliver at the very start, with legend
-  // dates that fall outside the displayed axis; omit a window that closed
-  // before the timeline even begins rather than fake its position.
+  // A window that closed before the timeline even begins would clamp both ends
+  // to 0% and render a fabricated sliver at the very start, with legend dates
+  // outside the displayed axis — so it is omitted rather than faked.
+  //
+  // Compared against `start`, not `savedAt`: those were the same thing until
+  // her stated period was allowed to open the axis earlier, and comparing
+  // against the save instead hid evaluation windows the axis displays perfectly
+  // well. Measured: timeframe "ספטמבר–יוני" re-saved on 10 May draws an axis
+  // from 1 September, and the formative window sits entirely inside it and was
+  // dropped anyway.
   const formative = formativeWindowAfter(savedAt);
-  if (formative.end.getTime() >= savedAt.getTime()) {
-    milestones.push({ kind: 'formativeWindow', label: 'הערכה מעצבת', detail: 'חלון הגאנט הקבוע להערכה המעצבת.', date: formative.start, rangeEnd: formative.end });
+  if (formative.end.getTime() >= start.getTime()) {
+    milestones.push({ kind: 'formativeWindow', label: 'הערכה מעצבת', detail: 'חלון הגאנט הקבוע להערכה המעצבת.', date: formative.start, rangeEnd: formative.end, band: 'filled' });
   }
   const summative = summativeWindowAfter(savedAt);
-  if (summative.end.getTime() >= savedAt.getTime()) {
-    milestones.push({ kind: 'summativeWindow', label: 'הערכה מסכמת', detail: 'חלון הגאנט הקבוע להערכה המסכמת.', date: summative.start, rangeEnd: summative.end });
+  if (summative.end.getTime() >= start.getTime()) {
+    milestones.push({ kind: 'summativeWindow', label: 'הערכה מסכמת', detail: 'חלון הגאנט הקבוע להערכה המסכמת.', date: summative.start, rangeEnd: summative.end, band: 'filled' });
   }
 
   milestones.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -220,7 +245,7 @@ export function buildPersonalGantt(state: MatiState, now = new Date()): Personal
   const cadenceDays = extractCadenceDays(state.plan.timeframe);
   const cadence: GanttCadence | null = cadenceDays ? { intervalDays: cadenceDays, label: cadenceLabel(cadenceDays) } : null;
 
-  return { start, end, now, milestones, cadence, planWindow };
+  return { start, end, now, milestones, cadence, planWindow, planWindowStatus };
 }
 
 /** Position of a date along [start,end] as 0–100, clamped so an out-of-range date cannot overflow the track. */

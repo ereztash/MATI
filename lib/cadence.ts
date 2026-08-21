@@ -21,6 +21,8 @@
  * smart-criteria.ts — extend them with real phrasing as it turns up.
  */
 
+import { tokenize } from './hebrew-text';
+
 type CadenceFamily = { days: number; label: string; phrases: string[] };
 
 const CADENCE_FAMILIES: CadenceFamily[] = [
@@ -28,14 +30,6 @@ const CADENCE_FAMILIES: CadenceFamily[] = [
   { days: 14, label: 'אחת לשבועיים', phrases: ['כל שבועיים', 'אחת לשבועיים', 'פעם בשבועיים', 'מדי שבועיים', 'דו שבועי', 'דו שבועית'] },
   { days: 30, label: 'אחת לחודש', phrases: ['כל חודש', 'אחת לחודש', 'פעם בחודש', 'מדי חודש', 'חודשי', 'חודשית'] },
 ];
-
-function normalize(text: string) {
-  return text.replace(/[-–—.,!/\\;:"'()״׳]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function tokenize(text: string): string[] {
-  return normalize(text).split(' ').filter(Boolean);
-}
 
 /** Whether `phrase`'s own tokens appear as a contiguous run inside `textTokens`. */
 function phraseMatches(textTokens: string[], phraseTokens: string[]): boolean {

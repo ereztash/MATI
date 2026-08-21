@@ -48,16 +48,15 @@ const MONTHS: MonthEntry[] = [
 /** Single-letter Hebrew prefixes that attach to a month name: בספטמבר, מאוקטובר, ומאי. */
 const PREFIXES = 'והבלשמכ';
 
+import { tokenize } from './hebrew-text';
+import { schoolYearPair } from './school-year';
+
 export type PlanWindow = {
   start: Date;
   end: Date;
-  /** The months as written, for the label the UI shows back to her. */
+  /** Canonical spelling of the two months that bound it — 'ספטמבר–מרץ' even if she wrote 'מרס'. Her literal text stays in the milestone's `detail`. */
   label: string;
 };
-
-function normalize(text: string) {
-  return text.replace(/[-–—.,!/\\;:"'()״׳]/g, ' ').replace(/\s+/g, ' ').trim();
-}
 
 /**
  * The month a token names, after peeling at most one prefix letter.
@@ -77,12 +76,6 @@ function monthOf(token: string): MonthEntry | null {
   return null;
 }
 
-/** The school-year pair a date belongs to — July starts a new one. */
-function schoolYearPair(date: Date) {
-  const first = date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1;
-  return { first, second: first + 1 };
-}
-
 /** A month's calendar year within the school year that `anchor` belongs to. */
 function yearFor(entry: MonthEntry, anchor: Date) {
   const { first, second } = schoolYearPair(anchor);
@@ -94,7 +87,7 @@ function yearFor(entry: MonthEntry, anchor: Date) {
  * date), or `null` when the text does not name two months in a readable order.
  */
 export function extractPlanWindow(text: string, anchor: Date): PlanWindow | null {
-  const mentioned = normalize(text).split(' ').map(monthOf).filter((m): m is MonthEntry => m !== null);
+  const mentioned = tokenize(text).map(monthOf).filter((m): m is MonthEntry => m !== null);
   if (mentioned.length < 2) return null;
 
   const from = mentioned[0];

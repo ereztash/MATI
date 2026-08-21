@@ -17,9 +17,21 @@ test('returns null when the plan is not saved', () => {
   assert.equal(buildPersonalGantt(emptyState), null);
 });
 
-test('start is exactly plan.savedAt', () => {
-  const gantt = buildPersonalGantt(stateWith(savedPlan()))!;
-  assert.equal(gantt.start.toISOString(), '2026-08-10T09:00:00.000Z');
+test('the axis opens at the earlier of the save and the period she named', () => {
+  // Named for the rule rather than for the fixture. This asserted "start is
+  // exactly plan.savedAt", which stopped being true when her stated period was
+  // allowed to open the axis — and kept passing, because the default fixture
+  // pairs "ספטמבר–ינואר" with an August save, where the save happens to be the
+  // earlier of the two. "יולי–ינואר" is an equally ordinary answer (the pilot's
+  // planning window opens in July) and the old assertion is false for it.
+  const windowOpensLater = buildPersonalGantt(stateWith(savedPlan()))!;
+  assert.equal(windowOpensLater.start.toISOString(), '2026-08-10T09:00:00.000Z', 'the save is earlier here');
+
+  const windowOpensFirst = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'יולי–ינואר' })))!;
+  assert.equal(toDateOnly(windowOpensFirst.start), '2026-07-01', 'her period is earlier here');
+
+  const noWindow = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'נתחיל אחרי החגים' })))!;
+  assert.equal(noWindow.start.toISOString(), '2026-08-10T09:00:00.000Z', 'and with no period named, the save decides');
 });
 
 test('program-year end is June 30 of the following year for a plan saved in the Jul-Sep window', () => {
@@ -94,11 +106,35 @@ test('milestones are sorted chronologically', () => {
   assert.deepEqual(times, sorted);
 });
 
-test('a milestone that lands after the timeline end does not crash and clamps visually', () => {
-  // Saved five days before the program-year end: the small-step offset (min 7 days) overshoots it.
-  const gantt = buildPersonalGantt(stateWith(savedPlan({ nextSmallStep: 'צעד' }, '2027-06-25T09:00:00.000Z')))!;
+test('a suggested milestone never overshoots the period it is a suggestion about', () => {
+  // The offsets carry floors — at least a week before the first small step, ten
+  // days before the manager conversation — so a suggestion is never the same
+  // day as the save. Those floors used to win outright: saved five days before
+  // the program-year end, or re-saved three days before her own window closes,
+  // and the suggestion landed past the end. On the axis it clamped to 100%; in
+  // the dashed band it simply sat outside, under copy promising the opposite.
+  const nearProgramEnd = buildPersonalGantt(stateWith(savedPlan({ nextSmallStep: 'צעד' }, '2027-06-25T09:00:00.000Z')))!;
+  const step = nearProgramEnd.milestones.find((m) => m.kind === 'smallStep')!;
+  assert.ok(step.date.getTime() <= nearProgramEnd.end.getTime());
+  assert.equal(timelinePercent(step.date, nearProgramEnd.start, nearProgramEnd.end), 100, 'and lands exactly at the end of the axis');
+
+  const nearWindowEnd = buildPersonalGantt(stateWith(savedPlan(
+    { timeframe: 'ספטמבר–ינואר', nextSmallStep: 'צעד', managers: 'מנהלת' },
+    '2027-01-28T09:00:00.000Z',
+  )))!;
+  for (const milestone of nearWindowEnd.milestones.filter((m) => m.adjustable)) {
+    assert.ok(milestone.date.getTime() <= nearWindowEnd.planWindow!.end.getTime(),
+      `${milestone.label} (${toDateOnly(milestone.date)}) falls past a window closing on 2027-01-31`);
+  }
+});
+
+test('an override she chose herself is respected even outside the range, and clamps visually', () => {
+  // Deliberate: the adjust panel nudges by days, and refusing a date she picked
+  // would be a validation gate this product does not have anywhere else.
+  // timelinePercent is what keeps it drawable.
+  const gantt = buildPersonalGantt(stateWith(savedPlan({ nextSmallStep: 'צעד', smallStepDate: '2028-01-01' })))!;
   const smallStep = gantt.milestones.find((m) => m.kind === 'smallStep')!;
-  assert.ok(smallStep.date.getTime() > gantt.end.getTime(), 'sanity: this case really does overshoot the end');
+  assert.ok(smallStep.date.getTime() > gantt.end.getTime(), 'sanity: this override really is past the end');
   assert.equal(timelinePercent(smallStep.date, gantt.start, gantt.end), 100);
 });
 
@@ -244,14 +280,91 @@ test('two different timeframes produce two different Gantts', () => {
 });
 
 test('every personal milestone falls inside the period she described', () => {
-  const gantt = withTimeframe('אוקטובר–דצמבר');
-  const window = gantt.planWindow!;
-  for (const milestone of gantt.milestones.filter((m) => m.adjustable)) {
-    assert.ok(milestone.date.getTime() >= window.start.getTime(),
-      `${milestone.label} (${toDateOnly(milestone.date)}) starts before her plan does`);
-    assert.ok(milestone.date.getTime() <= window.end.getTime(),
-      `${milestone.label} (${toDateOnly(milestone.date)}) falls after her plan ends`);
+  // Several saves, not one. A single early save inside a 92-day window is the
+  // case where every offset lands inside no matter what the code does — the
+  // property only breaks when there is less runway left than the offset floors
+  // ask for, which is a late save, so a one-fixture version of this test could
+  // not fail on the bug it is named for.
+  const cases: Array<[string, string]> = [
+    ['אוקטובר–דצמבר', '2026-08-10T09:00:00.000Z'],
+    ['ספטמבר–ינואר', '2027-01-28T09:00:00.000Z'],
+    ['ספטמבר–דצמבר', '2026-12-27T09:00:00.000Z'],
+    ['ספטמבר–ינואר', '2027-01-31T09:00:00.000Z'],
+  ];
+  for (const [timeframe, savedAt] of cases) {
+    const gantt = buildPersonalGantt(stateWith(savedPlan(
+      { timeframe, nextSmallStep: 'לשבת עם רכזת', managers: 'מנהלת', flexibility: 'ליווי פרטני' }, savedAt,
+    )))!;
+    const window = gantt.planWindow!;
+    for (const milestone of gantt.milestones.filter((m) => m.adjustable)) {
+      assert.ok(milestone.date.getTime() >= window.start.getTime(),
+        `${timeframe} saved ${savedAt.slice(0, 10)}: ${milestone.label} (${toDateOnly(milestone.date)}) starts before her plan does`);
+      assert.ok(milestone.date.getTime() <= window.end.getTime(),
+        `${timeframe} saved ${savedAt.slice(0, 10)}: ${milestone.label} (${toDateOnly(milestone.date)}) falls after her plan ends`);
+    }
   }
+});
+
+test('the flexibility check lands mid-course, not at the front with the others', () => {
+  // The three personal offsets are proportions of her period — roughly 6%, 12%
+  // and 50% — with day floors underneath so a suggestion is never the same day
+  // as the save. Only the floors were pinned: replacing the proportional part
+  // entirely left the suite green, and "בדיקת גמישות" would have collapsed to
+  // the first week alongside the other two. A mid-course check that happens in
+  // week one is not a mid-course check.
+  const gantt = buildPersonalGantt(stateWith(savedPlan({
+    timeframe: 'ספטמבר–ינואר', nextSmallStep: 'לשבת עם רכזת', managers: 'מנהלת', flexibility: 'ליווי פרטני',
+  })))!;
+  const window = gantt.planWindow!;
+  const at = (kind: string) => gantt.milestones.find((m) => m.kind === kind)!.date.getTime();
+  const span = window.end.getTime() - window.start.getTime();
+  const share = (kind: string) => (at(kind) - window.start.getTime()) / span;
+
+  assert.ok(at('smallStep') < at('managerTouch'), 'the first small step comes before the manager conversation');
+  assert.ok(at('managerTouch') < at('flexibilityCheck'), 'and both come well before the mid-course check');
+  assert.ok(share('flexibilityCheck') > 0.4 && share('flexibilityCheck') < 0.6,
+    `the flexibility check should sit near the middle of her period, sat at ${(share('flexibilityCheck') * 100).toFixed(0)}%`);
+  assert.ok(share('managerTouch') < 0.25, 'and the manager conversation in its opening quarter');
+});
+
+test('an evaluation window the axis can show is shown, even when it closed before she saved', () => {
+  // Regression from the commit that introduced planWindow: these guards were
+  // changed from comparing against the axis start to comparing against the
+  // save, which were the same thing until her period was allowed to open the
+  // axis earlier. Measured: "ספטמבר–יוני" re-saved on 10 May draws an axis from
+  // 1 September, and the formative window sat entirely inside it and was
+  // dropped anyway — an organizational fact silently missing from a chart that
+  // displays it correctly.
+  const reSavedInMay = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר–יוני' }, '2027-05-10T09:00:00.000Z')))!;
+  const kinds = reSavedInMay.milestones.map((m) => m.kind);
+  assert.ok(kinds.includes('formativeWindow'), 'Dec–Feb sits inside an axis that starts in September');
+  assert.ok(kinds.includes('summativeWindow'));
+
+  // …and one that closed before the axis itself begins is still omitted.
+  const noWindowNamed = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'נתחיל אחרי החגים' }, '2027-05-10T09:00:00.000Z')))!;
+  assert.ok(!noWindowNamed.milestones.some((m) => m.kind === 'formativeWindow'),
+    'with the axis starting at the May save, the formative window really is behind it');
+});
+
+test('why a stated period was not used is reported, not just that it was not', () => {
+  // "You named no months" and "the months you named are behind us" need
+  // different things said back to her: the first asks her to write a range, and
+  // telling that to someone who wrote "ספטמבר–נובמבר" in March is both false
+  // about her input and unactionable.
+  assert.equal(buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר–ינואר' })))!.planWindowStatus, 'used');
+  assert.equal(buildPersonalGantt(stateWith(savedPlan({ timeframe: 'נתחיל אחרי החגים' })))!.planWindowStatus, 'none');
+  assert.equal(buildPersonalGantt(stateWith(savedPlan(
+    { timeframe: 'ספטמבר–נובמבר' }, '2027-03-01T09:00:00.000Z',
+  )))!.planWindowStatus, 'closed');
+});
+
+test('a maqaf between the months reads the same as a dash', () => {
+  // The two readers of plan.timeframe share one tokenizer now. They did not,
+  // and the separator list they each carried privately omitted the maqaf ־ —
+  // which this codebase emits itself in the Gantt's own aria-label.
+  const maqaf = buildPersonalGantt(stateWith(savedPlan({ timeframe: 'ספטמבר־ינואר, אחת לשבועיים' })))!;
+  assert.equal(toDateOnly(maqaf.planWindow!.start), '2026-09-01');
+  assert.equal(maqaf.cadence?.label, 'אחת לשבועיים');
 });
 
 test('a milestone is never scheduled before the plan it belongs to was written', () => {
