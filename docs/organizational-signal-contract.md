@@ -53,7 +53,11 @@ Each signal carries a stage, structured value, confidence and projection policy.
 
 ## Privacy floor
 
-The pilot default is `MIN_AGGREGATE_COHORT = 5` contributors before an aggregate may be surfaced. This is a technical privacy floor, not a professional threshold and not a claim of statistical anonymity. A future deployment may require a stricter threshold based on the real cohort structure.
+The pilot default is `MIN_AGGREGATE_COHORT = 3` contributors before an aggregate may be surfaced. This is a technical privacy floor, not a professional threshold and not a claim of statistical anonymity.
+
+**Lowered from 5 to 3 on 2026-08-18 by an explicit decision.** The מתי״א manager asked for sensitivity at 2–3 repetitions inside a single framework (`docs/manager-decisions.md`, Q12). With a pilot cohort of 10–30 מדריכות spread across many frameworks, a floor of 5 could plausibly surface nothing for an entire year — a privacy guarantee that prevents an organization from ever learning anything is not a neutral default, it is a decision made by omission.
+
+The cost is carried explicitly rather than hidden. Below 5 contributors a reader who knows the cohort may be able to infer individuals, so every `SystemicPatternDecision` reports `identifiabilityRisk: 'low' | 'elevated'`, the contract check fails if that field disappears, and any surface presenting a small aggregate is expected to show the risk rather than imply anonymity. If the pilot shows that individuals are identifiable in practice, the floor should be raised again — this is the one threshold in the system whose relaxation increases risk rather than reducing it.
 
 ## When a local signal becomes systemic
 
@@ -67,12 +71,12 @@ Systemicity is not inferred from one report or from prevalence alone. The v0 cla
 The classifier distinguishes:
 
 - `local_observation`
-- `local_cluster`
+- `local_cluster` — surfaced for inquiry **only when it carries operational impact** (Q12 asks for local sensitivity; Q11 refuses recurrence alone as a systemic signal)
 - `cross_context_pattern`
 - `persistent_pattern`
 - `systemic_candidate`
 
-A `systemic_candidate` is still **not a causal diagnosis**. It means the organization has enough distributed evidence to justify human inquiry.
+A `systemic_candidate` is still **not a causal diagnosis**. It means the organization has enough distributed evidence to justify human inquiry. The same holds, more strongly, for a surfaced `local_cluster`: it is a question to take to the field (Q22), not a finding.
 
 ## Authority after detection
 

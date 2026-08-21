@@ -59,6 +59,12 @@ export function migrateState(raw: unknown): MatiState {
     },
     summative: { ...emptyState.summative, ...objectOr(source.summative) },
     history: Array.isArray(source.history) ? source.history : [],
+    // Same guard as history: `...source` above spreads unvalidated stored data,
+    // so a corrupted value here would otherwise reach diffPlans as garbage.
+    planRevisions: Array.isArray(source.planRevisions) ? source.planRevisions : [],
+    // Only a real object can serve as a diff baseline; merging onto emptyState.plan
+    // guarantees every tracked field exists even in a save that predates one.
+    lastSavedPlan: source.lastSavedPlan ? { ...emptyState.plan, ...objectOr(source.lastSavedPlan) } : undefined,
   };
 }
 
@@ -84,4 +90,107 @@ export function loadStoredState(): StoredStateLoad {
 /** Convenience wrapper for the read-only surfaces that only need the state. */
 export function readStoredState(): MatiState {
   return loadStoredState().state;
+}
+
+export type WriteResult = 'ok' | 'blocked' | 'unreadable';
+
+/**
+ * The write half of this module, which until now did not exist — every surface
+ * hand-rolled its own `try { localStorage.setItem(...) } catch`, and they
+ * diverged: one reported failure, one swallowed it, and one was left unguarded
+ * entirely. A write that can fail should say so in its return type rather than
+ * leave each caller to remember.
+ *
+ * `blocked` is a full or unavailable store (Safari private browsing enforces a
+ * zero quota, so even a first write throws; a locked-down profile throws on
+ * property access, which is why the whole body is inside the try).
+ */
+export function writeStoredState(state: MatiState): WriteResult {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return 'ok';
+  } catch {
+    return 'blocked';
+  }
+}
+
+/**
+ * Read → patch → write, refusing to write over a save it could not read.
+ *
+ * That refusal is the point: `readStoredState()` collapses unreadable JSON to
+ * `emptyState`, so patching through it and writing back replaces a damaged save
+ * with a blank one — verified in a browser, where one click on the calendar-gap
+ * picker made a truncated record parse cleanly again and took its recoverable
+ * text with it, while `loadStoredState().corrupted` flipped to false so nothing
+ * could ever report the loss. Callers are told instead.
+ */
+export function patchStoredState(patch: Partial<MatiState>): WriteResult {
+  const loaded = loadStoredState();
+  if (loaded.corrupted) return 'unreadable';
+  return writeStoredState({ ...loaded.state, ...patch });
+}
+
+/**
+ * Fields that record where she is rather than what she wrote. Listed once so
+ * adding another cannot be half-applied: `gapStage` was added as a navigation
+ * field and not added here, which made the app's own gap-answer write trip the
+ * cross-tab data-loss alarm that this list exists to prevent.
+ */
+const NAVIGATION_FIELDS = ['manualStage', 'gapStage'] as const;
+
+/** Key-sorted serialization, so two payloads written by different code paths compare equal. */
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
+    .join(',')}}`;
+}
+
+/**
+ * True when two stored payloads differ only in fields navigation owns rather
+ * than the instructor.
+ *
+ * `manualStage` is the only one, and app/session-stage-reset.tsx rewrites the
+ * key to strip it on every page load — so without this, opening a second tab
+ * is indistinguishable at the StorageEvent level from editing the plan there,
+ * and the first tab warns that work is about to be overwritten when nothing of
+ * hers changed. A warning that fires on a non-event is one she learns to
+ * dismiss, which costs the case it exists for.
+ */
+export function sameExceptNavigation(before: string, after: string): boolean {
+  try {
+    const strip = (raw: string) => {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const field of NAVIGATION_FIELDS) delete parsed[field];
+      return canonical(parsed);
+    };
+    return strip(before) === strip(after);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when a payload another tab just created holds nothing an instructor
+ * wrote — which is what a freshly-mounted page autosaving its empty state
+ * looks like, and what happens in the surviving tab right after a delete.
+ * Without this the receiving tab is warned that a plan is about to be
+ * overwritten moments after she deliberately deleted it.
+ */
+export function isEmptyPayload(raw: string): boolean {
+  return sameExceptNavigation(JSON.stringify(emptyState), raw);
+}
+
+/** Removes both keys. Guarded for the same reason writes are. */
+export function clearStoredState(): WriteResult {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+    return 'ok';
+  } catch {
+    return 'blocked';
+  }
 }

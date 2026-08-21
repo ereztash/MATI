@@ -144,6 +144,14 @@
 .workExperience .institutionBar,
 .workExperience .welcomeBlock { display: none; }
 .workExperience .appHeader { padding-top: 0; background: transparent; border: 0; box-shadow: none; }
+/* The sticky work-session bar is portalled in after this header (see the slot
+   in app/page.tsx), so the two no longer occupy the same space and neither
+   needs to out-stack the other. An earlier attempt to settle it with z-index
+   here only swapped which control was unreachable. */
+/* display:contents, not a wrapper box: a sticky child sticks within its
+   PARENT's box, and a zero-height wrapper would let the bar scroll straight
+   out of view. This makes .shell the containing block, as it was before. */
+#workSessionSlot { display: contents; }
 .workExperience .workspace { grid-template-columns: 1fr; max-width: 980px; }
 .workExperience .sideCard { display: none; }
 .workExperience .mainCard { border-radius: 22px; }
@@ -151,7 +159,7 @@
 
 .workSessionBar {
   position: sticky;
-  top: 68px;
+  top: 80px;   /* clears the 73px .experienceTopbar; below it the bar tucks under */
   z-index: 65;
   width: min(980px, calc(100% - 32px));
   margin: 18px auto -2px;
@@ -194,7 +202,7 @@ html[data-work-session="on"] .view-work .workExperience .actions { margin-top: 1
   .homeDecisionCard { grid-template-columns: 1fr; }
   .homePrimary { width: 100%; }
   .homeGrid, .insightHeroGrid { grid-template-columns: 1fr; }
-  .workSessionBar { top: 104px; grid-template-columns: 1fr auto; }
+  .workSessionBar { top: 132px; grid-template-columns: 1fr auto; }
   .workSessionProgress { grid-column: 1 / -1; grid-row: 2; }
 }
 
@@ -205,7 +213,7 @@ html[data-work-session="on"] .view-work .workExperience .actions { margin-top: 1
   .homeDecisionCard, .insightCard, .nextDecision, .emptyInsight, .emptyJourney { padding: 22px; border-radius: 18px; }
   .evidenceStrip { grid-template-columns: 1fr; }
   .yearRail b { font-size: .74rem; }
-  .workSessionBar { width: calc(100% - 20px); grid-template-columns: 1fr; top: 104px; gap: 10px; }
+  .workSessionBar { width: calc(100% - 20px); grid-template-columns: 1fr; top: 132px; gap: 10px; }
   .workSessionActions { width: 100%; }
   .workSessionActions button { flex: 1; }
   .workSessionProgress { grid-column: auto; grid-row: auto; }

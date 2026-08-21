@@ -17,7 +17,16 @@ if (leaks.length) throw new Error(`Private/free-text fields entered organization
 const cohortMatch = source.match(/MIN_AGGREGATE_COHORT\s*=\s*(\d+)/);
 if (!cohortMatch) throw new Error('MIN_AGGREGATE_COHORT is missing.');
 const cohort = Number(cohortMatch[1]);
-if (cohort < 5) throw new Error(`Privacy floor too low: ${cohort}. Expected >= 5.`);
+// The floor was lowered from 5 to 3 by an explicit decision on 2026-08-18, so
+// that the organization can actually learn something at pilot cohort size (see
+// MIN_AGGREGATE_COHORT in lib/organizational-signals.ts and Q12 in
+// docs/manager-decisions.md). The guard stays — it exists to stop the floor
+// drifting down by accident — and now sits at the decided value. Lowering it
+// again is a decision to be taken and documented, not a code change to slip in.
+if (cohort < 3) throw new Error(`Privacy floor too low: ${cohort}. Expected >= 3 (decided 2026-08-18; was 5).`);
+// A smaller floor is only defensible while the identifiability cost is shown
+// rather than hidden, so that guarantee is now part of the contract too.
+if (!source.includes('identifiabilityRisk')) throw new Error('Decisions must report identifiabilityRisk once the floor is below 5.');
 if (!source.includes('mayAssertCausality: false')) throw new Error('Systemic classifier must explicitly deny causal assertion.');
 if (!source.includes("projection: 'aggregate_only'")) throw new Error('Signals must be aggregate-only by construction.');
 

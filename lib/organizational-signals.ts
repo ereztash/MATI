@@ -1,7 +1,25 @@
 import type { MatiState, Stage } from './stages';
 import { managerMeetingPercent, studentImprovementPercent } from './stages';
 
-export const MIN_AGGREGATE_COHORT = 5;
+/**
+ * Privacy floor for aggregation.
+ *
+ * Lowered from 5 to 3 by an explicit decision (2026-08-18), because the
+ * מתי״א manager asked for sensitivity at "2–3 חזרות באותה מסגרת"
+ * (docs/manager-decisions.md, Q12). With a cohort of 10–30 מדריכות spread
+ * across many frameworks, a floor of 5 could plausibly surface nothing at
+ * all for a whole year — a privacy guarantee that protects an organization
+ * from ever learning anything is not a neutral default.
+ *
+ * The cost is real and is not hidden: at 3 contributors a manager who knows
+ * the cohort may be able to infer who is behind an aggregate. Every decision
+ * therefore carries `identifiabilityRisk`, and the console is expected to
+ * show it rather than present a small aggregate as if it were anonymous.
+ */
+export const MIN_AGGREGATE_COHORT = 3;
+
+/** Below this, an aggregate is small enough that a reader who knows the cohort may infer individuals. */
+export const LOW_IDENTIFIABILITY_COHORT = 5;
 
 export type OrganizationalSignalKey =
   | 'implementation_rate'
@@ -57,6 +75,8 @@ export interface SystemicPatternDecision {
   maySurfaceToOrganization: boolean;
   mayAssertCausality: false;
   requiresHumanReview: boolean;
+  /** 'elevated' once an aggregate is small enough that individuals may be inferable — surface it, never suppress it. */
+  identifiabilityRisk: 'low' | 'elevated';
   reasons: string[];
 }
 
@@ -135,9 +155,11 @@ export function classifySystemicPattern(observations: AggregatedSignalObservatio
   const highImpact = observations.some((o) => o.operationalImpact === 'high');
   const reasons: string[] = [];
 
+  const identifiabilityRisk: 'low' | 'elevated' = contributors < LOW_IDENTIFIABILITY_COHORT ? 'elevated' : 'low';
+
   if (contributors < minCohort) {
     reasons.push(`privacy_floor:${contributors}/${minCohort}`);
-    return { classification: 'insufficient_privacy_floor', contributors, contexts, periods, adverseShare, maySurfaceToOrganization: false, mayAssertCausality: false, requiresHumanReview: false, reasons };
+    return { classification: 'insufficient_privacy_floor', contributors, contexts, periods, adverseShare, maySurfaceToOrganization: false, mayAssertCausality: false, requiresHumanReview: false, identifiabilityRisk, reasons };
   }
 
   if (contributors >= 2) reasons.push('recurrence');
@@ -152,8 +174,15 @@ export function classifySystemicPattern(observations: AggregatedSignalObservatio
   if (contributors >= minCohort && contexts >= 2 && periods >= 2) classification = 'persistent_pattern';
   if (contributors >= minCohort && contexts >= 3 && periods >= 2 && adverseShare >= 0.5 && highImpact) classification = 'systemic_candidate';
 
-  const maySurfaceToOrganization = classification !== 'local_observation' && classification !== 'local_cluster';
-  return { classification, contributors, contexts, periods, adverseShare, maySurfaceToOrganization, mayAssertCausality: false, requiresHumanReview: maySurfaceToOrganization, reasons };
+  // Q12 asks for sensitivity at 2-3 repetitions inside a single framework, so a
+  // local cluster is no longer silently withheld. Q11 is equally explicit that
+  // recurrence alone is not systemic — it has to bear on implementation — so a
+  // cluster surfaces only when it carries operational impact, and it surfaces as
+  // something to ask about, never as a systemic claim.
+  const maySurfaceToOrganization = classification === 'local_cluster'
+    ? highImpact
+    : classification !== 'local_observation';
+  return { classification, contributors, contexts, periods, adverseShare, maySurfaceToOrganization, mayAssertCausality: false, requiresHumanReview: maySurfaceToOrganization, identifiabilityRisk, reasons };
 }
 
 export type OrganizationalAuthority = 'detect' | 'surface' | 'suggest_inquiry' | 'diagnose_cause' | 'set_policy' | 'act';

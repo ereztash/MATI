@@ -8,9 +8,11 @@
     "start": "next start",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "test:chaos": "node tests/chaos/wizard-gremlins.mjs",
     "check:signals": "node scripts/check-organizational-signal-contract.mjs",
     "check:design": "node scripts/check-design-contract.mjs",
-    "check:semantic-ux": "node scripts/check-semantic-ux-contract.mjs"
+    "check:semantic-ux": "node scripts/check-semantic-ux-contract.mjs",
+    "check:readiness": "node scripts/check-readiness.mjs"
   },
   "dependencies": {
     "next": "16.3.1",
@@ -18,10 +20,12 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "gremlins.js": "^2.2.0",
     "tsx": "^4.23.12",
     "typescript": "^5.9.0"
   }

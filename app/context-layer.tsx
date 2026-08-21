@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { analyzeInteraction, emptyState, MatiState, stageFromDate, Stage } from '../lib/stages';
+import { analyzeInteraction, emptyState, MatiState, resolveStage, stageFromDate, Stage } from '../lib/stages';
 import { readStoredState } from '../lib/state-storage';
 import {
   buildContextSnapshot,
@@ -37,11 +37,20 @@ function readUsage(now = new Date()): UsageContext {
 }
 
 function persistUsage(usage: UsageContext, interactionCount = usage.interactionCount) {
-  localStorage.setItem(USAGE_KEY, JSON.stringify({
-    ...usage,
-    interactionCount,
-    lastVisitAt: new Date().toISOString(),
-  }));
+  // Usage telemetry is optional and only ever softens copy/density — it must
+  // never throw uncaught into the same debounced input/change/click path
+  // page.tsx's own (guarded) save runs on, or a full/blocked store turns a
+  // missed nudge into a second source of the same crash that guard exists
+  // to prevent.
+  try {
+    localStorage.setItem(USAGE_KEY, JSON.stringify({
+      ...usage,
+      interactionCount,
+      lastVisitAt: new Date().toISOString(),
+    }));
+  } catch {
+    // no-op — see above
+  }
 }
 
 export default function ContextLayer() {
@@ -94,7 +103,10 @@ export default function ContextLayer() {
   const model = useMemo(() => {
     if (!usage) return null;
     const automaticStage = stageFromDate();
-    const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
+    // Was its own copy of the `?? 1` fallback, so during a gap month the ribbon
+    // coached Stage 1 next to a screen saying it could not tell which stage
+    // this was. resolveStage is the one place that decides now.
+    const activeStage = (resolveStage(state).stage ?? 1) as Stage;
     const profile = analyzeInteraction(state);
     const snapshot = buildContextSnapshot({ state, activeStage, automaticStage, profile, usage });
     const strategy = deriveCoachStrategy(snapshot);

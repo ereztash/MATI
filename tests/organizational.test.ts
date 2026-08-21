@@ -69,15 +69,58 @@ test('an empty state produces no signals at all', () => {
   assert.deepEqual(extractOrganizationalSignals(migrateState({})), []);
 });
 
+const signal = (key: string, value: unknown) => ({ key, stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' }) as OrganizationalSignal;
+
+/**
+ * Every directional key, in both directions, over the instrument's real value
+ * vocabulary — not a sample of it.
+ *
+ * The previous version of this test named four keys out of nine and was called
+ * "concern is only assigned where the instrument has a direction", which reads
+ * as coverage of the instrument. It was not: inverting the direction of
+ * meeting_execution, implementation_depth, student_impact, resource_allocation,
+ * teacher_independence and sustainability all at once left all 113 unit tests
+ * green (verified by mutation, 2026-08-20). That matters more here than in most
+ * places — signalConcern is what `adverseShare` counts, so an inverted
+ * direction does not crash anything, it just quietly tells the organization
+ * that a struggling cohort is fine.
+ *
+ * Values are the answer unions from lib/stages.ts (Formative q1/q3/q4/q6/q7),
+ * so a new option added to an answer without a decision about its direction
+ * shows up here as a missing case rather than defaulting to "no concern".
+ */
+const CONCERN_DIRECTIONS: Array<[string, unknown[], unknown[]]> = [
+  //  key                     concern                 not a concern
+  ['goal_attainment',        ['none', 'partial'],    ['mostly', 'full']],
+  ['meeting_execution',      ['under70'],            ['70-90', '90-100']],
+  ['implementation_depth',   ['shallow', 'partial'], ['consistent']],
+  ['student_impact',         ['none', 'low'],        ['medium', 'high']],
+  ['manager_commitment',     ['low', 'resistance'],  ['high', 'medium']],
+  ['resource_allocation',    ['no', 'partial'],      ['yes']],
+  ['teacher_independence',   ['none', 'partial'],    ['most', 'all']],
+  ['sustainability',         ['no', 'partial'],      ['yes']],
+  ['team_feedback_presence', [false],                [true]],
+];
+
+test('concern is assigned in the right direction for every directional signal', () => {
+  for (const [key, concerning, benign] of CONCERN_DIRECTIONS) {
+    for (const value of concerning) {
+      assert.equal(signalConcern(signal(key, value)), true, `${key}=${String(value)} must read as a concern`);
+    }
+    for (const value of benign) {
+      assert.equal(signalConcern(signal(key, value)), false, `${key}=${String(value)} must NOT read as a concern`);
+    }
+  }
+});
+
 test('concern is only assigned where the instrument has a direction', () => {
-  const signal = (key: string, value: unknown) => ({ key, stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' }) as OrganizationalSignal;
-  assert.equal(signalConcern(signal('goal_attainment', 'partial')), true);
-  assert.equal(signalConcern(signal('goal_attainment', 'full')), false);
-  assert.equal(signalConcern(signal('manager_commitment', 'resistance')), true);
-  assert.equal(signalConcern(signal('team_feedback_presence', false)), true);
   // Percentages have no approved professional cut-off, so they stay neutral.
   assert.equal(signalConcern(signal('implementation_rate', 20)), null);
   assert.equal(signalConcern(signal('student_improvement_rate', 5)), null);
+  assert.equal(signalConcern(signal('manager_meeting_rate', 0)), null);
+  assert.equal(signalConcern(signal('resource_allocation_rate', 100)), null);
+  // An unanswered question is not a quiet "no concern" either.
+  assert.equal(signalConcern(signal('goal_attainment', '')), false);
 });
 
 test('the privacy floor blocks projection and classification below the cohort size', () => {
@@ -113,6 +156,67 @@ test('a systemic candidate needs spread, persistence, impact and a majority', ()
   assert.equal(classifySystemicPattern(rows(2, 2, true)).classification, 'persistent_pattern');
   assert.equal(classifySystemicPattern(rows(3, 2, true)).classification, 'systemic_candidate');
   assert.equal(classifySystemicPattern(rows(3, 2, false)).classification, 'persistent_pattern', 'no majority adverse');
+});
+
+test('the reasons a decision gives are true at the exact threshold, not one past it', () => {
+  // The classification thresholds above are pinned; the `reasons` array beside
+  // them was not, so `contexts >= 2`, `periods >= 2` and `adverseShare >= 0.5`
+  // could each be tightened to `>` with the whole suite still green. Those
+  // strings are what the organizational console shows a manager as the
+  // justification for surfacing something, so a reason that quietly stops
+  // appearing at exactly two contexts is a decision explained wrongly rather
+  // than a crash. Exactly-at-the-boundary is the only interesting case.
+  const rows = (contexts: number, periods: number, adverseOf: number): AggregatedSignalObservation[] =>
+    Array.from({ length: 4 }, (_, i) => ({
+      key: 'goal_attainment', contributorId: `c${i}`, contextId: `ctx${i % contexts}`,
+      periodId: `2026-0${(i % periods) + 1}`, adverse: i < adverseOf, operationalImpact: 'high',
+    }));
+
+  const twoContextsTwoPeriods = classifySystemicPattern(rows(2, 2, 4)).reasons;
+  assert.ok(twoContextsTwoPeriods.includes('cross_context_spread'), 'exactly two contexts is already spread');
+  assert.ok(twoContextsTwoPeriods.includes('persistence'), 'exactly two periods is already persistence');
+
+  const oneOfEach = classifySystemicPattern(rows(1, 1, 4)).reasons;
+  assert.ok(!oneOfEach.includes('cross_context_spread'), 'a single context is not spread');
+  assert.ok(!oneOfEach.includes('persistence'), 'a single period is not persistence');
+
+  // Exactly half adverse counts as a majority by this instrument's definition.
+  assert.ok(classifySystemicPattern(rows(2, 2, 2)).reasons.includes('majority_adverse'), 'half is the documented cut-off');
+  assert.ok(!classifySystemicPattern(rows(2, 2, 1)).reasons.includes('majority_adverse'), 'a quarter is not');
+});
+
+test('a local cluster surfaces for inquiry only when it bears on implementation', () => {
+  // Q12 asks for sensitivity at 2-3 repetitions inside one framework; Q11 is
+  // equally explicit that recurrence alone is not systemic. So the same cluster
+  // surfaces or not depending on operational impact, and never as a systemic claim.
+  const cluster = (operationalImpact: 'low' | 'high'): AggregatedSignalObservation[] =>
+    Array.from({ length: 3 }, (_, i) => ({
+      key: 'goal_attainment', contributorId: `c${i}`, contextId: 'one-framework',
+      periodId: '2026-01', adverse: true, operationalImpact,
+    }));
+
+  const weighty = classifySystemicPattern(cluster('high'));
+  assert.equal(weighty.classification, 'local_cluster');
+  assert.equal(weighty.maySurfaceToOrganization, true, 'three in one framework, with impact, is worth asking about');
+  assert.equal(weighty.requiresHumanReview, true);
+  assert.equal(weighty.mayAssertCausality, false, 'surfacing is never a causal claim');
+
+  const slight = classifySystemicPattern(cluster('low'));
+  assert.equal(slight.classification, 'local_cluster');
+  assert.equal(slight.maySurfaceToOrganization, false, 'recurrence without operational impact stays local');
+});
+
+test('identifiability risk is reported rather than suppressed once the cohort is small', () => {
+  const rows = (n: number): AggregatedSignalObservation[] => Array.from({ length: n }, (_, i) => ({
+    key: 'goal_attainment', contributorId: `c${i}`, contextId: `ctx${i}`,
+    periodId: '2026-01', adverse: true, operationalImpact: 'high',
+  }));
+  assert.equal(classifySystemicPattern(rows(3)).identifiabilityRisk, 'elevated');
+  assert.equal(classifySystemicPattern(rows(4)).identifiabilityRisk, 'elevated');
+  assert.equal(classifySystemicPattern(rows(5)).identifiabilityRisk, 'low');
+  // Even a decision that is withheld still carries the risk assessment.
+  assert.equal(classifySystemicPattern(rows(2)).classification, 'insufficient_privacy_floor');
+  assert.equal(classifySystemicPattern(rows(2)).identifiabilityRisk, 'elevated');
 });
 
 test('causality is never assertable and cause/policy/action stay with a human', () => {
@@ -192,10 +296,69 @@ test('aggregation counts distinct contributors, contexts and periods', () => {
   assert.equal(goals.contexts, 2);
   assert.equal(goals.periods, 2);
   assert.equal(goals.concerns, 3, 'all three reported partial attainment');
-  assert.equal(goals.classification?.classification, 'insufficient_privacy_floor', 'three contributors is below the floor');
+  // The floor is 3 by an explicit decision (see MIN_AGGREGATE_COHORT): the manager
+  // asked for sensitivity at 2-3 repetitions, so three contributors now clears it
+  // rather than being withheld. It classifies on its own merits from there.
+  assert.equal(goals.classification?.classification, 'persistent_pattern');
+  assert.equal(goals.classification?.maySurfaceToOrganization, true);
+  // Clearing the floor is not the same as being anonymous — three is still small
+  // enough to infer individuals, and the decision has to say so out loud.
+  assert.equal(goals.classification?.identifiabilityRisk, 'elevated');
 
   // A percentage has no cut-off, so it aggregates as scope only and never classifies.
   const rate = summaries.find((s) => s.key === 'implementation_rate')!;
   assert.equal(rate.neutral, 3);
   assert.equal(rate.classification, null);
+});
+
+test('a percentage is valid at both ends of its range, and nowhere outside', () => {
+  // 0% implementation and 100% implementation are both real answers. The
+  // existing coverage rejected 140 and never checked that the permitted range
+  // includes its own endpoints, so both bounds could be tightened silently and
+  // an honest "nothing was implemented" would be dropped from the export.
+  const withRate = (value: unknown) => {
+    const pack = JSON.parse(JSON.stringify(validPack()));
+    (pack.signals as Record<string, unknown>[]).find((s) => s.key === 'implementation_rate')!.value = value;
+    return validateOrganizationalPack(pack);
+  };
+  assert.equal(withRate(0), true, '0% is a measurement, not a missing value');
+  assert.equal(withRate(100), true);
+  assert.equal(withRate(-1), false);
+  assert.equal(withRate(101), false);
+  assert.equal(withRate(Number.NaN), false);
+});
+
+test('a signal that is not an object is rejected rather than read as one', () => {
+  // The signals array is the part of a pack that comes from another device.
+  // `null` in particular is worth naming: it is what a half-written JSON file
+  // and a stripped field both produce, and `typeof null === 'object'`.
+  for (const junk of [null, undefined, 'goal_attainment', 42, true, ['goal_attainment']]) {
+    const pack = JSON.parse(JSON.stringify(validPack()));
+    (pack.signals as unknown[])[0] = junk;
+    assert.equal(validateOrganizationalPack(pack), false, `a signal of ${JSON.stringify(junk) ?? 'undefined'} must be rejected`);
+  }
+});
+
+test('aggregation counts a concern as adverse and a benign answer as not', () => {
+  // `adverse` is derived from signalConcern and is what the privacy-floor
+  // classifier counts. Reading it backwards makes a healthy cohort look
+  // systemic and a struggling one look fine, with no other visible symptom.
+  const packWith = (contributorId: string, value: string): OrganizationalPack => createOrganizationalPack({
+    contributorId, contextId: 'RGV-07', periodId: '2026-01',
+    signals: [{ key: 'goal_attainment', stage: 2, value, confidence: 'high', projection: 'aggregate_only', operationalImpact: 'high' } as OrganizationalSignal],
+  });
+
+  const allAdverse = summarizeOrganizationalPacks([
+    packWith('contributor-0001', 'partial'), packWith('contributor-0002', 'none'), packWith('contributor-0003', 'partial'),
+  ])[0];
+  assert.equal(allAdverse.concerns, 3);
+  assert.equal(allAdverse.classification?.adverseShare, 1);
+  assert.ok(allAdverse.classification?.reasons.includes('majority_adverse'));
+
+  const allFine = summarizeOrganizationalPacks([
+    packWith('contributor-0001', 'full'), packWith('contributor-0002', 'mostly'), packWith('contributor-0003', 'full'),
+  ])[0];
+  assert.equal(allFine.concerns, 0);
+  assert.equal(allFine.classification?.adverseShare, 0);
+  assert.ok(!allFine.classification?.reasons.includes('majority_adverse'));
 });

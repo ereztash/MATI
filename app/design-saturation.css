@@ -113,6 +113,14 @@ button:not(:disabled):active { transform:translateY(1px); }
 
 .experiencePage { padding-top:clamp(46px,6vw,70px); }
 .homeHero { margin-inline:0 auto;max-width:760px;margin-bottom:30px; }
+/* The gap picker moved onto the home view but its only styling lived in
+   globals.css, so on the one screen an instructor meets first in October it
+   rendered ~280px wider than the question above it and hovered in the legacy
+   blue while every other control here is the sage --soft-action palette. */
+.homeExperience .gapOptions { max-width:760px;margin-inline:0 auto; }
+.homeExperience .gapOptions button { border-color:var(--soft-line); }
+.homeExperience .gapOptions button:hover { border-color:var(--soft-action);background:var(--soft-action-bg); }
+.homeExperience .gapOptions b { color:#1c2d2c; }
 .homeGreeting,.homeKicker { color:var(--soft-muted-strong);font-size:.8rem;font-weight:850; }
 .homeHero h1,.experiencePageHead h1 {
   max-width:840px;
@@ -245,7 +253,10 @@ button:not(:disabled):active { transform:translateY(1px); }
   text-align:right!important;
 }
 .workExperience .sectionHead p { max-width:620px!important;margin-inline:0!important;color:var(--soft-muted)!important; }
-.workExperience .sectionHead h2,.workExperience .sectionHead h3 { color:#213431!important; }
+/* h1 added when the stage titles were promoted from h2 — without it the three
+   section titles were the only headings in the work view still falling back to
+   --ink, a colour drift introduced by an accessibility change. */
+.workExperience .sectionHead h1,.workExperience .sectionHead h2,.workExperience .sectionHead h3 { color:#213431!important; }
 .workExperience .formSection,.workExperience .assessmentSection {
   border:1px solid var(--soft-line)!important;
   border-right-width:1px!important;
@@ -326,7 +337,7 @@ button:not(:disabled):active { transform:translateY(1px); }
 .workExperience .summaryConfirm { background:#fafbf9!important;border-color:var(--soft-line)!important; }
 
 .workSessionBar {
-  top:72px;
+  top:80px;
   max-width:920px;
   border-color:var(--soft-line);
   border-radius:14px;
@@ -376,7 +387,7 @@ button:not(:disabled):active { transform:translateY(1px); }
   .homeHero { margin-bottom:24px; }
   .homeDecisionCard { padding:24px; }
   .homeStatusCard { min-height:auto; }
-  .workSessionBar { top:108px;width:calc(100% - 20px); }
+  .workSessionBar { top:132px;width:calc(100% - 20px); }
   .contextRibbon { width:calc(100% - 20px); }
   .workExperience .workspace { width:100%!important; }
 }
@@ -399,7 +410,7 @@ button:not(:disabled):active { transform:translateY(1px); }
   .workExperience .optionGroup > div { display:grid!important;grid-template-columns:1fr!important; }
   .workExperience .optionGroup button { width:100%!important; }
   .workExperience .choice { width:100%; }
-  .workSessionBar { top:108px;gap:9px;padding:12px; }
+  .workSessionBar { top:132px;gap:9px;padding:12px; }
   .workSessionActions button { min-height:44px; }
   .knownFacts div { align-items:baseline; }
 }

@@ -2,21 +2,26 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  canOpenStage,
   emptyState,
   implementationStatus,
   MatiState,
   planSaved,
   recommendedActions,
+  rankDimensions,
   scoreDimensions,
   selfEffectivenessAverage,
+  resolveStage,
   stageFromDate,
+  stageLockReason,
+  stageNames,
   Stage,
 } from '../lib/stages';
 import { calendarContext, greetingForDaypart } from '../lib/context-engine';
-import { readStoredState } from '../lib/state-storage';
+import { patchStoredState, readStoredState } from '../lib/state-storage';
+import StagePicker, { GAP_EXPLANATION, GAP_QUESTION } from './stage-picker';
 
 type View = 'home' | 'work' | 'insight' | 'journey';
-const stageNames: Record<Stage, string> = { 1: 'תכנון', 2: 'הערכה מעצבת', 3: 'הערכה מסכמת' };
 
 function nextAction(state: MatiState, stage: Stage) {
   if (stage === 1) {
@@ -47,6 +52,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const [view, setView] = useState<View>('home');
   const [state, setState] = useState<MatiState>(emptyState);
   const [now, setNow] = useState<Date | null>(null);
+  const [pickerNotice, setPickerNotice] = useState('');
 
   const refresh = () => { setState(readStoredState()); setNow(new Date()); };
 
@@ -69,13 +75,23 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
     };
   }, []);
 
-  const automaticStage = now ? stageFromDate(now) : stageFromDate();
-  const activeStage = (state.manualStage ?? automaticStage ?? 1) as Stage;
-  const calendar = now ? calendarContext(now, automaticStage) : null;
+  // `now` is set by the mount effect, so it is null on the server and on the
+  // first client render. Anything derived from the date has to wait for it:
+  // this route is statically prerendered, and reading the clock before then
+  // bakes the build machine's month into the shipped HTML.
+  const dateKnown = now !== null;
+  // Regression: this used to fall back to 1 unconditionally, so the home
+  // screen confidently opened with "את בשלב תכנון" through October, November,
+  // March and April — months stageFromDate() deliberately returns null for,
+  // specifically so nothing here has to guess. resolveStage owns that decision
+  // for every surface now, and returning null is how it says "ask her".
+  const resolved = now ? resolveStage(state, now) : { stage: null, source: 'calendar' as const };
+  const inCalendarGap = dateKnown && resolved.stage === null;
+  const activeStage = (resolved.stage ?? 1) as Stage;
+  const calendar = now ? calendarContext(now, stageFromDate(now)) : null;
   const action = nextAction(state, activeStage);
   const dims = useMemo(() => scoreDimensions(state), [state]);
-  const lowest = [...dims].sort((a, b) => a.score - b.score)[0];
-  const strongest = [...dims].sort((a, b) => b.score - a.score)[0];
+  const { strongest, weakest: lowest } = rankDimensions(dims);
   const recommendations = recommendedActions(state);
   const implementation = implementationStatus(state);
   const effectiveness = selfEffectivenessAverage(state);
@@ -83,6 +99,29 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
   const greeting = calendar ? greetingForDaypart(calendar.daypart) : 'שלום';
 
   const go = (next: View) => { refresh(); setView(next); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+  /**
+   * The picker's three buttons are a stage change like any other, so they go
+   * through the same gate the stage strip does. This used to write
+   * `manualStage` unconditionally: verified in a browser, a first visit in a
+   * gap month could click "הערכה מסכמת" with nothing saved and land on the
+   * closing-the-year screen over an empty plan, while the strip rendered that
+   * stage as `aria-current="step"` and `aria-disabled="true"` at once and the
+   * side card claimed it had been "נבחר ידנית לאחר בדיקת תנאי המעבר".
+   *
+   * Failures are reported rather than swallowed. The previous empty `catch`
+   * deferred to page.tsx's notice, which cannot appear here — Home is mounted
+   * only under `view === 'work'` — so with a blocked store all three buttons
+   * were verified inert and silent, on the only screen this view offers.
+   */
+  const chooseStage = (stage: Stage) => {
+    if (!canOpenStage(stage, state)) { setPickerNotice(stageLockReason(stage)); return; }
+    const result = patchStoredState({ gapStage: { stage, chosenAt: new Date().toISOString() } });
+    if (result === 'blocked') { setPickerNotice('לא הצלחתי לשמור את הבחירה — ייתכן שהאחסון בדפדפן מלא או חסום (למשל בגלישה פרטית). אפשר להמשיך לעבוד דרך הלשונית "עבודה".'); return; }
+    if (result === 'unreadable') { setPickerNotice('לא הצלחתי לקרוא את המידע השמור במכשיר, ולכן לא כתבתי עליו. כדאי לפתוח את "עבודה" כדי לראות מה נשמר לפני שממשיכות.'); return; }
+    setPickerNotice('');
+    refresh();
+  };
 
   return (
     <div className={`experienceShell view-${view}`}>
@@ -104,10 +143,41 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
         <main className="experiencePage homeExperience">
           <section className="homeHero">
             <p className="homeGreeting">{greeting}{instructor ? `, ${instructor}` : ''}</p>
-            <h1>את בשלב <span>{stageNames[activeStage]}</span></h1>
-            <p>{calendar?.stagePosition === 'closing' && calendar.daysToStageEnd !== null ? `נשארו כ־${calendar.daysToStageEnd} ימים לחלון הזה. כדאי לסגור את מה שמשנה החלטה.` : calendar?.stagePosition === 'early' ? 'זה זמן טוב לבנות בסיס לפני שמקבעים החלטות.' : 'לא צריך לעשות הכול עכשיו. מספיק להתקדם בהחלטה אחת משמעותית.'}</p>
+            {/* Everything below the greeting is withheld until `dateKnown`.
+                `/` is statically prerendered, so without this the BUILD
+                machine's month is baked into the shipped HTML: verified by
+                curling the served page, which returned `<h1>את בשלב תכנון`
+                plus homeDecisionCard and homeGrid, while a client opening it
+                in October renders the gap picker and neither card — different
+                element types at the same position, i.e. a structural
+                hydration mismatch, and a first paint asserting exactly the
+                stage this screen exists to stop asserting. It also removes a
+                pre-existing text mismatch (React #418, reproduced on the
+                served build in December): stageFromDate() with no argument
+                reads build time on the server and real time on the client. */}
+            {/* A heading that is true before the date is known, so the served
+                document is never headingless — gating the whole hero left `/`
+                with no <h1> at all, which is a page-has-heading-one violation
+                on the first screen. It is replaced, not corrected, once the
+                clock is readable: the point of the gate is that the prerender
+                must not assert a stage, not that it must say nothing. */}
+            {!dateKnown && <h1>מתי המתי״א</h1>}
+            {dateKnown && (inCalendarGap ? (
+              <>
+                <h1>{GAP_QUESTION}</h1>
+                <p>{GAP_EXPLANATION}</p>
+              </>
+            ) : (
+              <>
+                <h1>את בשלב <span>{stageNames[activeStage]}</span></h1>
+                <p>{calendar?.stagePosition === 'closing' && calendar.daysToStageEnd !== null ? `נשארו כ־${calendar.daysToStageEnd} ימים לחלון הזה. כדאי לסגור את מה שמשנה החלטה.` : calendar?.stagePosition === 'early' ? 'זה זמן טוב לבנות בסיס לפני שמקבעים החלטות.' : 'לא צריך לעשות הכול עכשיו. מספיק להתקדם בהחלטה אחת משמעותית.'}</p>
+              </>
+            ))}
           </section>
 
+          {dateKnown && inCalendarGap && <StagePicker onChoose={chooseStage} state={state} notice={pickerNotice} />}
+
+          {dateKnown && !inCalendarGap && (<>
           <section className="homeDecisionCard">
             <div>
               <span className="homeKicker">הדבר הבא שכדאי לעשות</span>
@@ -131,6 +201,7 @@ export default function ExperienceShell({ children }: { children: React.ReactNod
               </dl>
             </div>
           </section>
+          </>)}
         </main>
       )}
 

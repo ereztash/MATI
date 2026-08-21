@@ -1,0 +1,334 @@
+<title>פרוטוקול תצפית R1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Frank+Ruhl+Libre:wght@500;700;900&display=swap">
+
+<style>
+  :root {
+    --paper:      #F6F6F4;
+    --card:       #FFFFFF;
+    --ink:        #1B1F24;
+    --muted:      #6E7076;
+    --rule:       #DEDDD8;
+    --signal:     #A63D2F;
+    --signal-bg:  #F7EDEB;
+    --support:    #2E4A62;
+    --support-bg: #EAEFF3;
+    --shadow:     0 1px 2px rgba(27,31,36,.05), 0 8px 24px rgba(27,31,36,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #15171A;
+      --card:       #1D2024;
+      --ink:        #E9E7E2;
+      --muted:      #9B9C9F;
+      --rule:       #31353A;
+      --signal:     #E08573;
+      --signal-bg:  #2C1F1C;
+      --support:    #9DC0D8;
+      --support-bg: #1A252E;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #15171A;
+    --card:       #1D2024;
+    --ink:        #E9E7E2;
+    --muted:      #9B9C9F;
+    --rule:       #31353A;
+    --signal:     #E08573;
+    --signal-bg:  #2C1F1C;
+    --support:    #9DC0D8;
+    --support-bg: #1A252E;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Assistant, "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+    direction: rtl;
+    text-align: right;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.1rem, 4vw, 2rem) 5rem; }
+
+  h1, h2, h3 { font-family: "Frank Ruhl Libre", Georgia, serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2rem, 6vw, 3rem); font-weight: 900; line-height: 1.15; letter-spacing: -.01em; }
+  h2 { font-size: clamp(1.35rem, 3.5vw, 1.7rem); font-weight: 700; line-height: 1.25; }
+  h3 { font-size: 1.05rem; font-weight: 700; }
+  p { margin: 0; }
+
+  .eyebrow {
+    font-size: .74rem; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--signal); margin: 0 0 .6rem;
+  }
+  .lede { font-size: 1.12rem; color: var(--muted); margin-top: 1rem; max-width: 34rem; }
+
+  header { padding-bottom: 2rem; border-bottom: 2px solid var(--ink); margin-bottom: 2.5rem; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; margin-top: 1.5rem;
+    font-size: .85rem; color: var(--muted);
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  .phase { display: grid; gap: 1rem; padding: 2.2rem 0; border-bottom: 1px solid var(--rule); }
+  .phase:last-of-type { border-bottom: 0; }
+  .phase-head { display: flex; align-items: baseline; gap: .8rem; }
+  .num {
+    font-family: "Frank Ruhl Libre", Georgia, serif; font-size: 1.5rem; font-weight: 500;
+    color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; line-height: 1;
+  }
+  .phase > p, .phase > ul { max-width: 36rem; }
+
+  ul { margin: 0; padding-inline-start: 1.2rem; display: grid; gap: .5rem; }
+  li::marker { color: var(--muted); }
+
+  .card {
+    background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 1.3rem 1.4rem; box-shadow: var(--shadow); display: grid; gap: .75rem;
+  }
+  .card h3 { margin-bottom: .1rem; }
+
+  .script {
+    border-inline-start: 4px solid var(--support);
+    background: var(--support-bg); border-radius: 8px; padding: 1.2rem 1.3rem;
+    display: grid; gap: .7rem;
+  }
+  .script p { font-size: 1.06rem; }
+  .script .say { font-family: "Frank Ruhl Libre", Georgia, serif; font-size: 1.15rem; font-weight: 500; }
+
+  .rules { background: var(--signal-bg); border: 1px solid var(--signal); border-radius: 10px; padding: 1.4rem; }
+  .rules h2 { color: var(--signal); margin-bottom: .3rem; }
+  .rules ol { margin: 1rem 0 0; padding-inline-start: 1.3rem; display: grid; gap: .85rem; }
+  .rules ol li::marker { color: var(--signal); font-weight: 700; }
+  .rules strong { font-weight: 700; }
+
+  .sheet { display: grid; gap: .1rem; margin-top: .4rem; }
+  .row {
+    display: grid; grid-template-columns: auto 1fr; gap: .7rem; align-items: start;
+    padding: .7rem .2rem; border-bottom: 1px dashed var(--rule);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row input[type="checkbox"] {
+    appearance: none; width: 1.15rem; height: 1.15rem; margin: .22rem 0 0;
+    border: 1.5px solid var(--muted); border-radius: 4px; background: var(--card);
+    cursor: pointer; flex: 0 0 auto; position: relative;
+  }
+  .row input[type="checkbox"]:checked { background: var(--support); border-color: var(--support); }
+  .row input[type="checkbox"]:checked::after {
+    content: "✓"; position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--card); font-size: .8rem; font-weight: 700;
+  }
+  .row input[type="checkbox"]:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .row label { cursor: pointer; }
+  .row .why { display: block; color: var(--muted); font-size: .86rem; margin-top: .15rem; }
+  .fill {
+    display: inline-block; min-width: 4.5rem; border-bottom: 1.5px solid var(--muted);
+    margin: 0 .2rem;
+  }
+
+  .verdict { border: 2px solid var(--ink); border-radius: 10px; padding: 1.5rem; display: grid; gap: .9rem; }
+  .verdict h2 { font-size: 1.4rem; }
+  .verdict .pass { font-size: 1.08rem; }
+  .verdict .fail { color: var(--muted); }
+
+  .note { font-size: .92rem; color: var(--muted); }
+  .no { color: var(--signal); font-weight: 600; }
+
+  @media print {
+    body { background: #fff; color: #000; font-size: 11pt; }
+    .card, .rules, .script, .verdict { break-inside: avoid; box-shadow: none; }
+    .wrap { max-width: none; padding: 0; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">MATI · קריטריון R1</p>
+    <h1>לשבת עם מדריכה אחת</h1>
+    <p class="lede">
+      R1 נסגר כשמדריכה שלא ראתה את MATI מעולם מגיעה לתוכנית עבודה שמורה — לבד, בטלפון שלה, בלי הדרכה.
+      זה הקריטריון הזול ביותר במסמך, והיחיד שיכול לפסול את כל השאר.
+    </p>
+    <div class="meta">
+      <span><b>40 דקות</b> איתה</span>
+      <span><b>שעה</b> סה״כ שלך</span>
+      <span>מדריכה <b>אחת</b> מספיקה</span>
+    </div>
+  </header>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">1</span><h2>את מי להזמין</h2></div>
+    <p>
+      זו ההחלטה שהכי משפיעה על התוצאה, והכי קל לטעות בה.
+      מדריכה נלהבת שאוהבת טכנולוגיה תעבור את הטופס בקלות ותיתן לך <strong>אישור שגוי</strong> —
+      וזה גרוע יותר מאפס נתונים, כי הוא סוגר את הקריטריון בלי להרוויח אותו.
+    </p>
+    <div class="card">
+      <h3>אל תבחר</h3>
+      <ul>
+        <li>את זו שכבר שמעה על MATI והתלהבה</li>
+        <li>את החזקה ביותר טכנולוגית</li>
+        <li>מישהי שכפופה לך או מרגישה מחויבת להגיד שזה טוב</li>
+      </ul>
+      <h3 style="margin-top:.5rem">כן תבחר</h3>
+      <ul>
+        <li>נוחות ממוצעת עם טלפון — לא מומחית, לא נמנעת</li>
+        <li>עסוקה. אם יש לה 40 דקות פנויות בקלות, היא לא מייצגת</li>
+        <li>קצת סקפטית. סקפטיות מייצרת משוב אמיתי</li>
+        <li>מישהי שממילא צריכה לכתוב תוכנית עבודה השנה</li>
+      </ul>
+    </div>
+    <p class="note">
+      התוכן צריך להיות אמיתי, לא תרגיל. תוכנית מומצאת בודקת את הטופס; תוכנית אמיתית בודקת את המוצר —
+      ואם זה עובד, היא יוצאת עם משהו שהיא צריכה בכל מקרה.
+    </p>
+  </section>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">2</span><h2>מה לשלוח מראש</h2></div>
+    <p>שום דבר על איך להשתמש. הודעה אחת:</p>
+    <div class="script">
+      <p class="say">
+        יש לי כלי חדש לתכנון עבודה שנתית ואני רוצה לבדוק אותו.
+        אשמח ל־40 דקות שבהן את מתכננת בו את התוכנית שלך לשנה — תוכנית אמיתית, לא תרגיל.
+        לא אסביר איך להשתמש, זה בדיוק מה שאני בודק.
+        אם משהו לא יעבוד — זו תקלה שלי, לא שלך.
+      </p>
+    </div>
+    <p class="note">אל תשלח קישור מראש. אתה רוצה לראות את הרגע הראשון.</p>
+  </section>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">3</span><h2>מה להגיד בפתיחה</h2></div>
+    <p>קרא את זה כמעט מילה במילה, ואז שתוק.</p>
+    <div class="script">
+      <p class="say">
+        אני בודק אם הכלי מובן בלי הסבר, אז לא אסביר.<br>
+        אם משהו לא ברור או מעצבן — זו תקלה שלי. תגידי את זה בקול, זה הכי שימושי לי.<br>
+        נסי לחשוב בקול: מה את מחפשת, מה את מצפה שיקרה.<br>
+        אפשר לעצור בכל רגע.<br>
+        זהו — הטלפון שלך, קדימה.
+      </p>
+    </div>
+  </section>
+
+  <section class="rules">
+    <p class="eyebrow">החלק שבו נכשלים</p>
+    <h2>ארבעה כללי שתיקה</h2>
+    <p>הערך של הפגישה נמצא כולו במה ש<strong>אתה לא עושה</strong>. זה יהיה לא נעים. זה בסדר.</p>
+    <ol>
+      <li><strong>ספור עד 20 בלב</strong> לפני שאתה פותח את הפה. רוב מה שתרצה להגיד תמותר תוך 20 שניות.</li>
+      <li><strong>על שאלה — ענה בשאלה.</strong> «מה עושים פה?» ← <em>«מה היית עושה אם לא הייתי כאן?»</em> · «זה נכון?» ← <em>«מה נראה לך?»</em></li>
+      <li><strong>אל תיגע בטלפון שלה.</strong> אף פעם. גם לא «רק שנייה אני אראה לך».</li>
+      <li><strong>אם היא תקועה מעל 3 דקות ומתוסכלת — עזור לה.</strong> אבל R1 נכשל בריצה הזו, ורשום איפה. קיבלת בדיוק את התשובה שבאת בשבילה.</li>
+    </ol>
+  </section>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">4</span><h2>מה לרשום תוך כדי</h2></div>
+    <p>סמן תוך כדי, לא מהזיכרון אחר כך. השורות מכוונות לנקודות שכבר ידוע שנשברות.</p>
+    <div class="card">
+      <div class="sheet">
+        <div class="row">
+          <input type="checkbox" id="c1">
+          <label for="c1">מצאה לבד את לשונית «עבודה»
+            <span class="why">אם לא — הניווט הוא הבעיה, לא הטופס. זמן: <span class="fill"></span></span>
+          </label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="c2">
+          <label for="c2">הבינה שיש שלושה חלקים, לא מסך אחד
+            <span class="why">הטופס מציג חלק אחד בכל פעם. אם היא חשבה שזה הכול — זה נכשל בשקט.</span>
+          </label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="c3">
+          <label for="c3">לחצה «אשרי ושמרי» כשהיתה עדיין בחלק 1
+            <span class="why">המלכודת שנתפסה ב־18.8. אם כן: ההודעה הפנתה אותה לחלק הנכון, או שהיא נתקעה?</span>
+          </label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="c4">
+          <label for="c4">בדיקת ה־SMART נקראה כעזרה — לא כחסימה
+            <span class="why">אם היא ניסתה «לתקן» את הנקודות האפורות, הניסוח עדיין מטעה.</span>
+          </label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="c5">
+          <label for="c5">כתבה תוכן אמיתי, לא «משהו שיעבור»
+            <span class="why">מילוי מינימלי כדי להתקדם הוא סימן שהשדה לא נראה לה שווה את המאמץ.</span>
+          </label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="c6">
+          <label for="c6">הגיעה לתוכנית שמורה
+            <span class="why">זמן כולל מהפתיחה: <span class="fill"></span> דקות</span>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>ובנפרד, בכתב יד</h3>
+      <ul>
+        <li><strong>כל עצירה מעל 10 שניות</strong> — איפה במסך, ומה היא אמרה</li>
+        <li><strong>כל שאלה שהיא שאלה בקול</strong> — במילים שלה, לא בסיכום שלך</li>
+        <li><strong>כל רגע שבו רצית להתערב</strong> — זה בדיוק מקום שבו המוצר לא מסביר את עצמו</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">5</span><h2>ארבע שאלות בסוף</h2></div>
+    <p>רק אחרי שסיימה. חמש דקות.</p>
+    <div class="card">
+      <ul>
+        <li>מה היה הכי מבלבל?</li>
+        <li>אם זה היה נתקע לך בבית, למי היית פונה? <span class="note">← זו גם התשובה ל־R6</span></li>
+        <li>תשתמשי בזה שוב בלי שאבקש ממך?</li>
+        <li>מה היית מוחקת מהמסך הראשון?</li>
+      </ul>
+    </div>
+    <p class="note">
+      <span class="no">אל תשאל «אהבת?»</span> — כולם עונים כן, ואז אין לך כלום.
+      השאלה השלישית היא היחידה שמודדת אימוץ באמת.
+    </p>
+  </section>
+
+  <section class="phase">
+    <div class="verdict">
+      <p class="eyebrow">להחליט לפני הפגישה, לא אחריה</p>
+      <h2>מתי R1 נסגר</h2>
+      <p class="pass">
+        <strong>עובר רק אם שני אלה נכונים:</strong> היא הגיעה לתוכנית עבודה שמורה,
+        <strong>וגם</strong> לא ענית על אף שאלה על איך להשתמש בכלי.
+      </p>
+      <p class="fail">
+        כל דבר אחר — R1 נשאר פתוח. זו לא תוצאה רעה: עכשיו אתה יודע בדיוק איפה נשבר,
+        מתקן, ומריץ שוב עם מדריכה אחרת. ריצה שנכשלה שווה יותר מריצה שלא קרתה.
+      </p>
+      <p class="note">
+        כשזה עובר — עדכן את שורת R1 ב־<code>docs/MARKET_READINESS.md</code> עם תאריך ושם.
+        בלי שם ותאריך הקריטריון פתוח, גם אם הרגשת שזה הלך טוב.
+      </p>
+    </div>
+  </section>
+
+  <section class="phase">
+    <div class="phase-head"><span class="num">6</span><h2>כמה מדריכות</h2></div>
+    <p>
+      <strong>אחת מספיקה כדי לסגור את R1.</strong> שתיים או שלוש עדיפות — אחרי השלישית כמעט לא לומדים חדש.
+    </p>
+    <p>
+      אבל אל תיתן ל«בוא נעשה את זה כמו שצריך עם חמש» להפוך לסיבה שזה לא קורה בכלל.
+      נשארו שבועות בחלון התכנון. פגישה אחת בשבוע הקרוב שווה יותר מתוכנית מחקר מושלמת בנובמבר.
+    </p>
+  </section>
+
+</div>
